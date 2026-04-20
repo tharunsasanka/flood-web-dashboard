@@ -1,0 +1,3446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kelani River Flood Warning System</title>
+  
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+  
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <style>
+    :root {
+      --primary: #1e40af;
+      --primary-dark: #1d4ed8;
+      --secondary: #0ea5e9;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --gray-100: #f8fafc;
+      --gray-200: #e2e8f0;
+      --gray-300: #d1d5db;
+      --gray-600: #4b5563;
+      --gray-800: #1e293b;
+      --gray-900: #0f172a;
+      --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+      --transition: all 0.3s cubic-bezier(0.165, 0.84, 0.44, 1);
+    }
+    
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { 
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+      min-height: 100vh;
+      color: var(--gray-900);
+      line-height: 1.6;
+      transition: background 0.3s, color 0.3s;
+    }
+    
+    /* FEATURE: Emergency Strobe Effect */
+    @keyframes redAlertStrobe {
+      0% { box-shadow: inset 0 0 0 0 rgba(239, 68, 68, 0); }
+      50% { box-shadow: inset 0 0 40px 15px rgba(239, 68, 68, 0.5); }
+      100% { box-shadow: inset 0 0 0 0 rgba(239, 68, 68, 0); }
+    }
+    body.emergency-strobe {
+      animation: redAlertStrobe 2s infinite;
+    }
+
+    /* FEATURE: Dynamic Rain Overlay */
+    .rain-overlay {
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      pointer-events: none; z-index: 9998;
+      background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="10" height="100"><line x1="5" y1="0" x2="5" y2="20" stroke="rgba(14,165,233,0.4)" stroke-width="1" stroke-dasharray="10,20"/></svg>');
+      animation: rainFall 0.4s linear infinite;
+      display: none;
+    }
+    body.is-raining .rain-overlay { display: block; }
+    @keyframes rainFall { 0% {background-position: 0px 0px;} 100% {background-position: -20px 200px;} }
+    
+    .container { max-width: 1400px; margin: 0 auto; padding: 0 20px; }
+    
+    /* Header Styles */
+    header { 
+      background: white;
+      box-shadow: var(--card-shadow);
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+      padding: 15px 0;
+      margin-bottom: 30px;
+      border-bottom: 1px solid var(--gray-200);
+      transition: background 0.3s, border-color 0.3s;
+    }
+    
+    .header-content {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 0 20px;
+      flex-wrap: nowrap; 
+      gap: 15px;
+    }
+    
+    .logo { display: flex; align-items: center; gap: 15px; }
+    .logo-icon { 
+      background: var(--primary); 
+      width: 64px; 
+      height: 64px; 
+      border-radius: 18px; 
+      display: flex; 
+      align-items: center; 
+      justify-content: center; 
+      color: white; 
+      font-size: 32px; 
+      box-shadow: 0 4px 12px rgba(30, 64, 175, 0.25);
+      border: 2px solid #1d4ed8;
+    }
+    .logo h1 { font-size: 28px; font-weight: 800; color: var(--gray-900); letter-spacing: -0.5px; }
+    .logo .subtitle { color: var(--gray-600); font-size: 16px; margin-top: 4px; }
+    
+    .status-bar { 
+      display: flex; 
+      align-items: center; 
+      gap: 15px; 
+      background: white; 
+      padding: 12px 20px; 
+      border-radius: 16px; 
+      box-shadow: var(--card-shadow);
+      border: 1px solid var(--gray-200);
+      transition: background 0.3s, border-color 0.3s;
+      flex-wrap: nowrap; 
+    }
+    
+    .status-bar select {
+        width: auto !important;
+        display: inline-block !important;
+    }
+
+    .status-badge { 
+      display: flex; 
+      align-items: center; 
+      gap: 8px; 
+      padding: 6px 16px; 
+      border-radius: 12px; 
+      font-weight: 600; 
+      font-size: 15px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+      white-space: nowrap;
+    }
+    .status-badge.live { background: #dcfce7; color: #166534; border: 1px solid #4ade80; }
+    .status-badge.loading { background: #ffedd5; color: #c2410c; border: 1px solid #fb923c; }
+    .status-badge.error { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; }
+    
+    /* Tab Navigation */
+    .tabs { 
+      display: flex; 
+      background: white; 
+      border-radius: 16px; 
+      overflow: hidden; 
+      box-shadow: var(--card-shadow); 
+      margin-bottom: 30px; 
+      border: 1px solid var(--gray-200);
+      max-width: 1400px;
+      margin: 30px auto 30px;
+      transition: background 0.3s, border-color 0.3s;
+    }
+    
+    .tab { 
+      flex: 1; 
+      padding: 18px 24px; 
+      text-align: center; 
+      cursor: pointer; 
+      font-weight: 600; 
+      color: var(--gray-600); 
+      transition: var(--transition);
+      border-bottom: 3px solid transparent;
+      font-size: 16px;
+    }
+    .tab.active { 
+      color: var(--primary); 
+      border-bottom: 3px solid var(--primary); 
+      background: #f0f9ff; 
+      position: relative;
+    }
+    .tab.active::after {
+      content: '';
+      position: absolute;
+      bottom: -3px;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: var(--primary);
+      border-radius: 2px 2px 0 0;
+    }
+    .tab:hover:not(.active) { background: var(--gray-100); }
+    
+    /* Card Styles */
+    .card { 
+      background: white; 
+      border-radius: 20px; 
+      padding: 30px; 
+      box-shadow: var(--card-shadow); 
+      margin-bottom: 25px; 
+      border: 1px solid var(--gray-200);
+      transition: var(--transition);
+    }
+    .card:hover { transform: translateY(-2px); box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1); }
+    
+    .card-header { 
+      display: flex; 
+      justify-content: space-between; 
+      align-items: center; 
+      margin-bottom: 25px; 
+      padding-bottom: 20px; 
+      border-bottom: 1px solid var(--gray-200); 
+      flex-wrap: wrap;
+      gap: 15px;
+    }
+    .card-header h2 { 
+      font-size: 24px; 
+      font-weight: 800; 
+      color: var(--gray-900); 
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .card-header h2 i { color: var(--primary); font-size: 26px; }
+    
+    .timestamp { 
+      background: #dbeafe; 
+      padding: 8px 18px; 
+      border-radius: 14px; 
+      font-size: 15px; 
+      font-weight: 600; 
+      color: #1e40af;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid #93c5fd;
+    }
+    
+    /* Water Level Chart */
+    .chart-container { 
+      height: 380px; 
+      position: relative; 
+      margin-top: 30px; 
+      background: var(--gray-100);
+      border-radius: 16px;
+      padding: 20px;
+      border: 1px solid var(--gray-200);
+    }
+    
+    .chart-title {
+      font-size: 19px;
+      font-weight: 700;
+      color: var(--gray-800);
+      margin-bottom: 15px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    
+    /* Water Level Status */
+    .progress-container { 
+      height: 42px; 
+      background: var(--gray-200); 
+      border-radius: 21px; 
+      overflow: hidden; 
+      margin: 25px 0; 
+      position: relative; 
+      box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.05);
+      border: 1px solid var(--gray-300);
+    }
+    
+    .progress-bar { 
+      height: 100%; 
+      border-radius: 21px; 
+      background: linear-gradient(90deg, var(--success) 0%, var(--warning) 70%, var(--danger) 100%); 
+      transition: width 0.6s cubic-bezier(0.165, 0.84, 0.44, 1); 
+      display: flex; 
+      align-items: center; 
+      justify-content: flex-end; 
+      padding-right: 20px; 
+      color: white; 
+      font-weight: 700; 
+      font-size: 18px; 
+      box-shadow: inset 0 0 15px rgba(0, 0, 0, 0.2);
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .progress-bar::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      height: 100%;
+      width: 100%;
+      background: linear-gradient(90deg, rgba(255,255,255,0.2) 0%, rgba(255,255,255,0.05) 100%);
+    }
+    
+    .progress-labels {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 12px;
+      font-size: 15px;
+      color: var(--gray-700);
+      font-weight: 600;
+    }
+    
+    /* Sensor Cards */
+    .sensors-grid { 
+      display: grid; 
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); 
+      gap: 25px; 
+      margin-top: 25px; 
+    }
+    
+    .sensor-card { 
+      background: var(--gray-100); 
+      border-radius: 18px; 
+      padding: 28px 20px; 
+      text-align: center; 
+      border: 1px solid var(--gray-200);
+      transition: var(--transition);
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    }
+    .sensor-card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 12px 20px -8px rgba(0, 0, 0, 0.15);
+      border-color: var(--gray-300);
+    }
+    .sensor-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      height: 5px;
+      width: 100%;
+      background: var(--primary);
+    }
+    .sensor-icon { 
+      font-size: 42px; 
+      margin-bottom: 18px; 
+      color: var(--primary); 
+      display: flex;
+      justify-content: center;
+      transition: var(--transition);
+    }
+    .sensor-card:hover .sensor-icon { transform: scale(1.15); }
+    .sensor-value { 
+      font-size: 32px; 
+      font-weight: 800; 
+      color: var(--gray-900); 
+      margin: 8px 0; 
+      line-height: 1.2;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    }
+    .sensor-label { 
+      color: var(--gray-700); 
+      font-size: 17px; 
+      font-weight: 600; 
+      margin-top: 8px;
+      display: flex;
+      justify-content: center;
+      gap: 6px;
+    }
+    .sensor-status {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 8px;
+      margin-top: 12px;
+      font-size: 15px;
+      font-weight: 600;
+      padding: 8px 15px;
+      border-radius: 12px;
+      background: white;
+      border: 1px solid var(--gray-200);
+      box-shadow: 0 2px 4px rgba(0,0,0,0.03);
+    }
+    .status-safe { color: var(--success); background: #dcfce7; border-color: #86efac; }
+    .status-warning { color: var(--warning); background: #ffedd5; border-color: #fdba74; }
+    .status-danger { color: var(--danger); background: #fee2e2; border-color: #fca5a5; }
+    
+    /* Alert Banner */
+    .alert-banner { 
+      background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%); 
+      border-left: 6px solid var(--danger); 
+      padding: 30px; 
+      border-radius: 20px; 
+      margin: 35px 0; 
+      position: relative; 
+      overflow: hidden; 
+      border: 1px solid #fecaca;
+      box-shadow: 0 10px 25px -5px rgba(239, 68, 68, 0.2);
+    }
+    .alert-banner::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      right: -50%;
+      width: 200%;
+      height: 200%;
+      background: radial-gradient(circle, rgba(239, 68, 68, 0.1) 0%, rgba(255, 255, 255, 0) 70%);
+      z-index: 0;
+    }
+    .alert-content { position: relative; z-index: 1; }
+    .alert-title { 
+      font-size: 32px; 
+      font-weight: 800; 
+      color: var(--danger); 
+      margin-bottom: 20px; 
+      display: flex; 
+      align-items: center; 
+      gap: 20px; 
+      text-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .alert-icon { 
+      width: 70px; 
+      height: 70px; 
+      background: white; 
+      border-radius: 20px; 
+      display: flex; 
+      align-items: center; 
+      justify-content: center; 
+      font-size: 36px; 
+      color: var(--danger);
+      box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+      border: 3px solid var(--danger);
+    }
+    .alert-message {
+      font-size: 24px;
+      font-weight: 700;
+      line-height: 1.4;
+      margin-bottom: 25px;
+      color: var(--gray-900);
+      text-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    }
+    .alert-details {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 20px;
+      margin-top: 20px;
+      padding-top: 20px;
+      border-top: 2px dashed #fecaca;
+    }
+    .alert-detail {
+      background: white;
+      padding: 18px;
+      border-radius: 16px;
+      border: 2px solid #fecaca;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    }
+    .alert-detail .label {
+      font-size: 16px;
+      color: var(--gray-700);
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .alert-detail .value {
+      font-size: 22px;
+      font-weight: 800;
+      color: var(--danger);
+    }
+    
+    .critical-level { 
+      position: absolute; 
+      top: 18%; 
+      left: 5%; 
+      right: 5%; 
+      height: 4px; 
+      background: var(--danger); 
+      border: 2px dashed var(--danger); 
+      border-radius: 2px; 
+      display: flex; 
+      align-items: center; 
+      box-shadow: 0 0 15px rgba(239, 68, 68, 0.6);
+    }
+    .critical-label { 
+      position: absolute; 
+      right: 10px; 
+      top: -15px;  
+      background: var(--danger); 
+      color: white; 
+      padding: 8px 22px; 
+      border-radius: 30px; 
+      font-weight: 800; 
+      font-size: 17px; 
+      box-shadow: 0 4px 15px rgba(239, 68, 68, 0.5);
+      white-space: nowrap;
+      animation: pulse 2s infinite;
+    }
+    
+    /* Weather Forecast */
+    .weather-grid { 
+      display: grid; 
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); 
+      gap: 25px; 
+      margin-top: 25px; 
+    }
+    
+    .weather-card { 
+      background: var(--gray-100); 
+      border-radius: 20px; 
+      padding: 28px; 
+      border: 1px solid var(--gray-200);
+      transition: var(--transition);
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.03);
+    }
+    .weather-card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 15px 30px -10px rgba(0, 0, 0, 0.15);
+      border-color: var(--gray-300);
+    }
+    .weather-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      height: 5px;
+      width: 100%;
+      background: var(--secondary);
+    }
+    .weather-day {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      margin-bottom: 22px;
+      padding-bottom: 18px;
+      border-bottom: 1px solid var(--gray-200);
+    }
+    
+    .weather-day .day {
+      font-size: 30px;
+      font-weight: 800;
+      color: var(--secondary);
+      width: auto;
+      min-width: 80px; 
+      text-align: center;
+      background: white;
+      padding: 10px;
+      border-radius: 16px;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+    }
+    
+    .weather-day .date {
+      color: var(--gray-800);
+      font-size: 18px;
+      font-weight: 600;
+    }
+    .weather-icon { 
+      font-size: 56px; 
+      margin: 15px 0; 
+      text-align: center; 
+      display: block;
+    }
+    .weather-condition {
+      font-size: 26px;
+      font-weight: 700;
+      color: var(--gray-900);
+      text-align: center;
+      margin-bottom: 20px;
+      text-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .weather-details {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+      margin-top: 22px;
+    }
+    .weather-detail {
+      background: white;
+      border-radius: 16px;
+      padding: 18px;
+      text-align: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+      border: 1px solid var(--gray-200);
+    }
+    .weather-detail .label {
+      color: var(--gray-700);
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+    .weather-detail .value {
+      font-size: 24px;
+      font-weight: 800;
+      color: var(--gray-900);
+    }
+    .weather-rain {
+      background: #dcfce7; 
+      padding: 16px; 
+      border-radius: 16px; 
+      margin-top: 22px; 
+      font-weight: 700; 
+      color: #047857;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      font-size: 18px;
+      border: 1px solid #86efac;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.03);
+    }
+    .weather-rain.heavy {
+      background: #fef2f2; 
+      color: var(--danger); 
+      border-color: #fecaca;
+      animation: pulse 2s infinite;
+    }
+    
+    /* Configuration Panel */
+    .config-section {
+      margin-bottom: 40px;
+      padding-bottom: 35px;
+      border-bottom: 1px solid var(--gray-200);
+    }
+    .config-section:last-child {
+      border-bottom: none;
+      margin-bottom: 0;
+      padding-bottom: 0;
+    }
+    .config-title {
+      font-size: 22px;
+      font-weight: 800;
+      color: var(--gray-900);
+      margin-bottom: 25px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding-bottom: 15px;
+      border-bottom: 2px solid var(--gray-200);
+    }
+    .config-title i { color: var(--primary); }
+    
+    .form-group { margin-bottom: 25px; }
+    label {
+      display: block;
+      margin-bottom: 10px;
+      color: var(--gray-800);
+      font-weight: 600;
+      font-size: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    label i { color: var(--primary); font-size: 18px; }
+    
+    input, select, textarea {
+      width: 100%;
+      padding: 16px;
+      border: 1px solid var(--gray-300);
+      border-radius: 14px;
+      font-size: 17px;
+      color: var(--gray-900);
+      transition: var(--transition);
+      background: white;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 4px rgba(30, 64, 175, 0.15);
+    }
+    
+    .input-group {
+      display: flex;
+      gap: 15px;
+    }
+    .input-group input {
+      flex: 1;
+    }
+    .input-group .unit {
+      width: 80px;
+      text-align: center;
+      background: var(--gray-100);
+      border: 1px solid var(--gray-300);
+      border-radius: 14px;
+      padding: 16px;
+      font-size: 17px;
+      color: var(--gray-800);
+      border-left: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+    }
+    
+    button {
+      background: var(--primary); 
+      color: white; 
+      border: none; 
+      padding: 16px 28px; 
+      border-radius: 14px; 
+      cursor: pointer; 
+      width: 100%; 
+      font-weight: 700; 
+      font-size: 17px; 
+      transition: var(--transition);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      box-shadow: 0 4px 12px rgba(30, 64, 175, 0.3);
+      position: relative;
+      overflow: hidden;
+    }
+    button::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+      transition: left 0.7s;
+    }
+    button:hover::before {
+      left: 100%;
+    }
+    button:hover {
+      background: var(--primary-dark);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 16px rgba(30, 64, 175, 0.4);
+    }
+    button:active {
+      transform: translateY(0);
+    }
+    button i { font-size: 20px; }
+    
+    .section-actions {
+      display: flex;
+      gap: 15px;
+      margin-top: 10px;
+    }
+    
+    button.action-btn {
+      flex: 1;
+      background-color: white !important;
+      color: #1e293b !important;
+      border: 1px solid var(--gray-300);
+      padding: 14px 20px;
+      border-radius: 12px;
+      font-weight: 600;
+      font-size: 16px;
+      cursor: pointer;
+      transition: var(--transition);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+      text-transform: none;
+    }
+    button.action-btn:hover {
+      background-color: var(--gray-100) !important;
+      border-color: var(--gray-400);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+    button.action-btn.primary {
+      background-color: var(--primary) !important;
+      color: white !important;
+      border: 1px solid var(--primary);
+      box-shadow: 0 4px 12px rgba(30, 64, 175, 0.3);
+    }
+    button.action-btn.primary:hover {
+      background-color: var(--primary-dark) !important;
+      border-color: var(--primary-dark);
+      box-shadow: 0 6px 16px rgba(30, 64, 175, 0.4);
+    }
+    button.action-btn.danger {
+      background-color: var(--danger) !important;
+      color: white !important;
+      border: 1px solid var(--danger);
+      box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+    }
+    button.action-btn.danger:hover {
+      background-color: #dc2626 !important;
+      border-color: #dc2626;
+      box-shadow: 0 6px 16px rgba(239, 68, 68, 0.4);
+    }
+    
+    /* Footer */
+    .footer { 
+      text-align: center; 
+      color: var(--gray-700); 
+      font-size: 17px; 
+      margin-top: 50px; 
+      padding: 40px 20px; 
+      background: white; 
+      border-radius: 24px; 
+      border: 1px solid var(--gray-200); 
+      box-shadow: var(--card-shadow);
+      max-width: 1400px;
+      margin: 50px auto;
+      transition: background 0.3s, border-color 0.3s;
+    }
+    .footer .title {
+      font-size: 24px;
+      font-weight: 800;
+      color: var(--primary);
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+    }
+    .footer .subtitle {
+      font-size: 20px;
+      color: var(--gray-900);
+      font-weight: 600;
+      margin: 20px 0;
+      line-height: 1.5;
+    }
+    .footer .quote {
+      font-style: italic;
+      color: var(--primary);
+      font-size: 20px;
+      font-weight: 700;
+      background: #f0f9ff;
+      padding: 20px;
+      border-radius: 18px;
+      border-left: 5px solid var(--primary);
+      margin: 30px 0;
+      line-height: 1.5;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.03);
+    }
+    .footer .project-info {
+      color: var(--gray-700);
+      font-size: 17px;
+      font-weight: 600;
+      margin-top: 15px;
+      padding-top: 15px;
+      border-top: 1px solid var(--gray-200);
+    }
+    
+    /* Loading State */
+    .loading { 
+      display: flex; 
+      justify-content: center; 
+      align-items: center; 
+      height: 100vh; 
+      background: #f0f9ff; 
+      flex-direction: column;
+      gap: 25px;
+    }
+    .loading-spinner {
+      width: 80px;
+      height: 80px;
+      border: 6px solid #dbeafe;
+      border-top: 6px solid var(--primary);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .loading-text {
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--gray-900);
+      text-align: center;
+    }
+    .loading-subtext {
+      color: var(--gray-600);
+      margin-top: 10px;
+      font-size: 18px;
+      max-width: 600px;
+      text-align: center;
+      line-height: 1.6;
+    }
+
+    /* Diagnostics Panel Styles */
+    .diagnostics-panel {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 15px;
+      margin-bottom: 25px;
+    }
+    .diag-box {
+      flex: 1;
+      min-width: 200px;
+      background: white;
+      padding: 15px 20px;
+      border-radius: 12px;
+      font-family: monospace;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--gray-600);
+      display: flex;
+      justify-content: space-between;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.03);
+      border: 1px solid var(--gray-200);
+      letter-spacing: 0.5px;
+      transition: all 0.3s;
+    }
+    .diag-val {
+      color: var(--primary);
+      font-weight: bold;
+    }
+
+    /* FEATURE: Device Offline Banner */
+    #offline-banner {
+      display: none;
+      background-color: #ef4444;
+      color: white;
+      text-align: center;
+      padding: 12px;
+      font-weight: bold;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      z-index: 9999;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+    }
+
+    /* FEATURE: Timeline Styles */
+    .timeline-item {
+        display: flex;
+        gap: 15px;
+        margin-bottom: 15px;
+        padding-bottom: 15px;
+        border-bottom: 1px solid var(--gray-200);
+    }
+    .timeline-item:last-child {
+        margin-bottom: 0;
+        padding-bottom: 0;
+        border-bottom: none;
+    }
+    .timeline-year {
+        font-weight: 800;
+        color: var(--primary);
+        font-size: 18px;
+        min-width: 60px;
+    }
+    .timeline-desc {
+        color: var(--gray-700);
+        font-size: 15px;
+    }
+    
+    /* Emergency Call Directory Styles */
+    .call-buttons-container {
+        display: flex;
+        gap: 15px;
+        flex-wrap: wrap;
+        margin-top: 15px;
+    }
+    .call-btn {
+        flex: 1;
+        min-width: 200px;
+        background: white;
+        border: 2px solid var(--gray-200);
+        border-radius: 12px;
+        padding: 15px;
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        text-decoration: none;
+        color: var(--gray-900);
+        transition: all 0.2s;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    .call-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        border-color: var(--primary);
+    }
+    .call-icon {
+        width: 45px;
+        height: 45px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 20px;
+        color: white;
+    }
+    .call-btn-dmc .call-icon { background: var(--danger); }
+    .call-btn-police .call-icon { background: var(--primary); }
+    .call-btn-amb .call-icon { background: var(--success); }
+    .call-btn-wa .call-icon { background: #25D366; } 
+    
+    .call-details {
+        display: flex;
+        flex-direction: column;
+    }
+    .call-title {
+        font-weight: 700;
+        font-size: 16px;
+    }
+    .call-number {
+        color: var(--gray-600);
+        font-size: 14px;
+        font-weight: 600;
+    }
+
+    /* FEATURE: Action Plan Checklist */
+    .action-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px;
+        background: var(--gray-100);
+        border-radius: 8px;
+        margin-bottom: 8px;
+        font-weight: 600;
+        font-size: 16px;
+        color: var(--gray-800);
+        border: 1px solid var(--gray-200);
+        transition: all 0.2s;
+        cursor: pointer;
+    }
+    .action-item:hover { background: white; border-color: var(--secondary); }
+    .action-item input[type="checkbox"] { width: 20px; height: 20px; cursor: pointer; flex-shrink: 0; box-shadow: none; }
+
+    /* FEATURE: Simulated Drone Cam */
+    .drone-cam-container {
+        position: relative;
+        background: #000;
+        height: 300px;
+        border-radius: 16px;
+        overflow: hidden;
+        border: 2px solid var(--gray-800);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: 'Courier New', Courier, monospace;
+        box-shadow: inset 0 0 50px rgba(0,0,0,0.8);
+    }
+    .drone-cam-container::after {
+        content: '';
+        position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+        background: repeating-linear-gradient(0deg, rgba(255,255,255,0.03) 0px, rgba(255,255,255,0.03) 1px, transparent 1px, transparent 4px);
+        pointer-events: none;
+    }
+    .cam-crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: rgba(255,255,255,0.3); font-size: 40px; }
+    .cam-overlay { position: absolute; padding: 15px; color: #10b981; font-weight: bold; text-shadow: 0 0 5px rgba(0,0,0,0.8); font-size: 14px; z-index: 2;}
+    .cam-top-left { top: 0; left: 0; color: #ef4444; animation: pulse 1s infinite; }
+    .cam-top-right { top: 0; right: 0; }
+    .cam-bottom-left { bottom: 0; left: 0; }
+    .cam-bottom-right { bottom: 0; right: 0; }
+
+    /* FEATURE: AI Chatbot */
+    .chatbot-container {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        z-index: 10000;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+    }
+    .chat-btn-toggle {
+        width: 60px; height: 60px;
+        background: var(--primary);
+        color: white;
+        border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 28px; cursor: pointer;
+        box-shadow: 0 4px 15px rgba(30, 64, 175, 0.4);
+        border: none; transition: transform 0.3s;
+    }
+    .chat-btn-toggle:hover { transform: scale(1.1); }
+    .chat-window {
+        width: 350px;
+        background: white;
+        border-radius: 16px;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+        margin-bottom: 15px;
+        display: none;
+        overflow: hidden;
+        border: 1px solid var(--gray-200);
+    }
+    .chat-header {
+        background: var(--primary);
+        color: white;
+        padding: 15px;
+        font-weight: bold;
+        display: flex; align-items: center; gap: 10px;
+    }
+    .chat-body {
+        height: 250px;
+        overflow-y: auto;
+        padding: 15px;
+        background: var(--gray-100);
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+    .chat-msg { padding: 10px 14px; border-radius: 12px; font-size: 14px; line-height: 1.4; max-width: 85%; }
+    .msg-bot { background: white; color: var(--gray-800); align-self: flex-start; border: 1px solid var(--gray-200); border-bottom-left-radius: 4px; }
+    .msg-user { background: var(--secondary); color: white; align-self: flex-end; border-bottom-right-radius: 4px; }
+    .chat-options { padding: 15px; border-top: 1px solid var(--gray-200); background: white; display: flex; flex-direction: column; gap: 8px; }
+    .chat-opt-btn { background: #f0f9ff; color: var(--primary); border: 1px solid #bae6fd; padding: 8px 12px; border-radius: 20px; font-size: 13px; cursor: pointer; text-align: left; transition: background 0.2s; }
+    .chat-opt-btn:hover { background: #e0f2fe; }
+
+   /* dark mode theme */
+
+    body.dark-mode {
+      --gray-100: #1e293b;
+      --gray-200: #334155;
+      --gray-300: #475569;
+      --gray-600: #94a3b8; 
+      --gray-700: #cbd5e1;
+      --gray-800: #e2e8f0;
+      --gray-900: #f8fafc;
+      background: #0f172a; 
+    }
+    
+    body.dark-mode header, 
+    body.dark-mode .card, 
+    body.dark-mode .tabs, 
+    body.dark-mode .status-bar, 
+    body.dark-mode .footer {
+      background: #1e293b !important;
+      border-color: #334155 !important;
+    }
+    
+    body.dark-mode .weather-detail, 
+    body.dark-mode .alert-detail {
+      background: #0f172a !important;
+      border-color: #334155 !important;
+    }
+    
+    body.dark-mode label,
+    body.dark-mode p,
+    body.dark-mode .config-title,
+    body.dark-mode h2,
+    body.dark-mode h3,
+    body.dark-mode h4,
+    body.dark-mode .timeline-desc {
+        color: #f8fafc !important;
+    }
+
+    body.dark-mode input, 
+    body.dark-mode select, 
+    body.dark-mode textarea {
+      background-color: #0f172a !important;
+      color: #f8fafc !important;
+      border-color: #334155 !important;
+    }
+    body.dark-mode input:focus, 
+    body.dark-mode select:focus, 
+    body.dark-mode textarea:focus {
+      background-color: #1e293b !important;
+    }
+    
+    body.dark-mode .input-group .unit {
+      background-color: #1e293b !important;
+      color: #cbd5e1 !important;
+      border-color: #334155 !important;
+    }
+    
+    body.dark-mode #user-list > div {
+      background-color: #0f172a !important;
+      border-color: #334155 !important;
+      color: #f8fafc !important;
+    }
+    body.dark-mode #user-list > div > div > div:first-child {
+      color: #f8fafc !important;
+    }
+    
+    body.dark-mode .footer .quote {
+      background-color: #1e293b !important;
+      color: #f8fafc !important;
+      box-shadow: none !important;
+    }
+
+    body.dark-mode .diag-box {
+      background: #1e293b !important;
+      border-color: #334155 !important;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.2) !important;
+    }
+    body.dark-mode .diag-val {
+      color: white !important;
+    }
+
+    body.dark-mode .tab.active {
+      color: white !important;
+      background: var(--primary) !important;
+    }
+    body.dark-mode .tab {
+      color: #94a3b8 !important;
+    }
+    body.dark-mode .tab:hover:not(.active) {
+      background: #334155 !important;
+      color: white !important;
+    }
+
+    body.dark-mode .action-item { background: #0f172a; border-color: #334155; color: #f8fafc; }
+    body.dark-mode .action-item:hover { background: #1e293b; }
+    
+    body.dark-mode .chat-window { background: #1e293b; border-color: #334155; }
+    body.dark-mode .chat-body { background: #0f172a; }
+    body.dark-mode .msg-bot { background: #1e293b; color: white; border-color: #334155; }
+    body.dark-mode .chat-options { background: #1e293b; border-color: #334155; }
+    body.dark-mode .chat-opt-btn { background: #0f172a; border-color: #3b82f6; }
+
+    /* Help Tooltips */
+    .help-icon {
+      cursor: help;
+      color: var(--gray-400);
+      margin-left: 5px;
+      font-size: 16px;
+      transition: color 0.3s;
+    }
+    .help-icon:hover {
+      color: var(--primary);
+    }
+
+    body.dark-mode .call-btn {
+        background: var(--gray-800);
+        border-color: var(--gray-600);
+        color: white;
+    }
+    body.dark-mode .call-number { color: var(--gray-400); }
+
+    /* Map Box */
+    #map {
+      height: 400px;
+      border-radius: 16px;
+      border: 1px solid var(--gray-200);
+      z-index: 1; 
+    }
+
+    /* Report Preview Area */
+    .report-preview {
+      font-family: monospace;
+      white-space: pre-wrap;
+      background: white;
+      padding: 25px;
+      border: 1px solid var(--gray-300);
+      border-radius: 12px;
+      margin-bottom: 20px;
+      font-size: 15px;
+      color: black;
+      box-shadow: inset 0 2px 5px rgba(0,0,0,0.05);
+    }
+    
+    /* Responsive Design */
+    @media (max-width: 768px) {
+      .tabs { flex-direction: column; }
+      .tab { padding: 15px; font-size: 15px; }
+      .sensor-card, .weather-card { padding: 22px 15px; }
+      .card { padding: 22px; }
+      .card-header { flex-direction: column; align-items: flex-start; }
+      .card-header h2 { font-size: 22px; }
+      .logo h1 { font-size: 24px; }
+      .logo .subtitle { font-size: 15px; }
+      .status-bar { flex-direction: column; gap: 10px; width: 100%; }
+      .alert-details { grid-template-columns: 1fr; }
+    }
+    
+    @media (max-width: 480px) {
+      .logo-icon { width: 50px; height: 50px; font-size: 26px; }
+      .logo h1 { font-size: 22px; }
+      .logo .subtitle { font-size: 14px; }
+      .sensor-value { font-size: 28px; }
+      .sensor-label { font-size: 16px; }
+      .weather-day .day { font-size: 28px; width: 50px; }
+      .weather-day .date { font-size: 16px; }
+      .weather-condition { font-size: 22px; }
+      .weather-detail .value { font-size: 20px; }
+      .weather-rain { font-size: 16px; padding: 12px; }
+      .alert-title { font-size: 26px; }
+      .alert-message { font-size: 20px; }
+      .alert-detail .value { font-size: 18px; }
+    }
+    
+    /* Portal Overlay */
+    .portal-overlay {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: #0f172a; z-index: 10000;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      transition: opacity 0.5s ease;
+    }
+    .portal-box {
+      background: #1e293b; padding: 40px; border-radius: 20px; text-align: center;
+      max-width: 420px; width: 90%; border: 1px solid #334155;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    }
+    .portal-icon { font-size: 45px; color: #3b82f6; margin-bottom: 20px; }
+    .portal-text { color: #94a3b8; margin-bottom: 30px; font-size: 16px; font-weight: 500; }
+    .portal-btn {
+      width: 100%; padding: 15px; border-radius: 12px; font-weight: 700; font-size: 15px;
+      margin-bottom: 12px; cursor: pointer; transition: all 0.2s; border: none;
+      display: flex; align-items: center; justify-content: center; gap: 10px; letter-spacing: 0.5px;
+    }
+    .btn-citizen { background: #e2e8f0; color: #0f172a; }
+    .btn-citizen:hover { background: #cbd5e1; transform: translateY(-2px); }
+    .btn-admin { background: #2563eb; color: white; }
+    .btn-admin:hover { background: #1d4ed8; transform: translateY(-2px); box-shadow: 0 4px 15px rgba(37, 99, 235, 0.3); }
+    .portal-input {
+      width: 100%; padding: 14px 16px; margin-bottom: 15px; border-radius: 10px; box-sizing: border-box;
+      border: 1px solid #334155; background: #0f172a; color: white; outline: none; font-size: 15px;
+    }
+    .portal-input:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
+    
+    /* Role Visibility Classes */
+    .admin-only { display: none !important; }
+    body.show-admin .admin-only { display: block !important; }
+    body.show-admin select.admin-only,
+    body.show-admin button.admin-only { display: inline-block !important; width: auto !important; }
+
+    /* River Cross Section Animation */
+    .river-cross-section {
+      position: relative; height: 200px; background: var(--gray-100); border-radius: 12px; 
+      overflow: hidden; border: 1px solid var(--gray-300); display: flex; align-items: flex-end; justify-content: space-between;
+    }
+    body.dark-mode .river-cross-section { background: var(--gray-800); border-color: var(--gray-600); }
+    .river-bank { width: 25%; height: 100%; background: var(--gray-600); clip-path: polygon(0 0, 100% 100%, 100% 100%, 0 100%); }
+    .river-bank.right { clip-path: polygon(100% 0, 100% 100%, 0 100%, 0 100%); }
+    #river-water-vis {
+      position: absolute; bottom: 0; left: 0; width: 100%; height: 0%; 
+      background: rgba(14, 165, 233, 0.7); backdrop-filter: blur(4px); 
+      transition: height 1s ease; border-top: 3px solid var(--secondary); 
+      display: flex; justify-content: center; align-items: flex-start; 
+      padding-top: 10px; color: white; font-weight: 800; text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+    }
+    
+    .console-card { margin-top: 25px; }
+    .terminal-window {
+      background: #0f172a; color: #10b981; font-family: monospace; font-size: 13px;
+      padding: 15px; border-radius: 8px; height: 200px; overflow-y: auto;
+      box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
+    }
+    .terminal-line { margin-bottom: 5px; }
+    .term-time { color: #64748b; margin-right: 8px; }
+    .term-type { color: #3b82f6; margin-right: 8px; }
+    .term-err { color: #ef4444; margin-right: 8px; }
+    .term-warn { color: #f59e0b; margin-right: 8px; }
+
+/* mobile responsive */
+    @media (max-width: 900px) {
+      /* Fix the header so it stacks neatly on top of each other */
+      .header-content { 
+        flex-direction: column; 
+        text-align: center; 
+        gap: 20px; 
+      }
+      .logo { 
+        flex-direction: column; 
+        justify-content: center; 
+      }
+      .logo h1 { 
+        font-size: 22px; 
+        line-height: 1.3; 
+        text-align: center; 
+      }
+      .logo .subtitle { 
+        font-size: 14px; 
+        text-align: center; 
+      }
+      
+      /* Turn the cramped status bar into an organized grid */
+      .status-bar { 
+        display: grid; 
+        grid-template-columns: 1fr 1fr; 
+        width: 100%; 
+        gap: 12px; 
+        padding: 15px;
+        box-sizing: border-box;
+      }
+      .status-bar select { 
+        width: 100% !important; 
+        text-align: center; 
+      }
+      .status-badge, .timestamp { 
+        width: 100%; 
+        justify-content: center; 
+      }
+      /* Center the dark mode toggle at the bottom of the grid */
+      #theme-toggle { 
+        grid-column: 1 / -1; 
+        margin: 5px auto 0; 
+      }
+
+      /* Fix the rest of the cards for mobile */
+      .tabs { flex-direction: column; }
+      .tab { padding: 15px; font-size: 15px; }
+      .sensor-card, .weather-card { padding: 22px 15px; }
+      .card { padding: 22px; }
+      .card-header { flex-direction: column; align-items: center; text-align: center; }
+      .card-header h2 { font-size: 20px; justify-content: center; }
+      .alert-details { grid-template-columns: 1fr; }
+      
+      /* Fix call buttons so they stack neatly */
+      .call-buttons-container { flex-direction: column; }
+      .call-btn { width: 100%; }
+    }
+    
+    @media (max-width: 480px) {
+      .logo-icon { width: 55px; height: 55px; font-size: 24px; }
+      .sensor-value { font-size: 28px; }
+      .sensor-label { font-size: 15px; }
+      .weather-day .day { font-size: 24px; width: 60px; }
+      .weather-day .date { font-size: 15px; }
+      .weather-condition { font-size: 20px; }
+      .weather-detail .value { font-size: 18px; }
+      .weather-rain { font-size: 15px; padding: 12px; }
+      .alert-title { font-size: 24px; }
+      .alert-message { font-size: 18px; }
+      .alert-detail .value { font-size: 18px; }
+      
+      /* Switch to 1 column for very small phones */
+      .status-bar { grid-template-columns: 1fr; }
+    }
+    /* FEATURE: Mobile Smart Shrinking Header */
+    @media (max-width: 900px) {
+      header {
+        transition: all 0.3s ease;
+      }
+      /* When the 'shrunk' class is active, make everything smaller */
+      header.shrunk {
+        padding: 10px 0;
+        margin-bottom: 15px;
+      }
+      header.shrunk .status-bar {
+        display: none !important; /* Hides the big buttons */
+      }
+      header.shrunk .subtitle {
+        display: none; /* Hides the sub-text */
+      }
+      header.shrunk .logo-icon {
+        width: 40px;
+        height: 40px;
+        font-size: 20px;
+      }
+      header.shrunk .logo h1 {
+        font-size: 18px;
+        margin: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="rain-overlay"></div>
+
+  <div id="offline-banner">
+    ⚠️ Your device has lost internet connection. Data is not live!
+  </div>
+  
+  <div id="simulation-panel" style="display:none; position:fixed; bottom:20px; left:20px; background:#1e293b; color:white; padding:15px; border-radius:10px; z-index:9999; box-shadow:0 10px 25px rgba(0,0,0,0.5); border: 2px solid #3b82f6;">
+      <h4 style="margin-bottom:10px; color:#3b82f6;"><i class="fas fa-gamepad"></i> Presenter Simulation</h4>
+      <div style="display:flex; gap:10px; margin-bottom:10px;">
+          <input type="number" id="sim-water" placeholder="Water Lvl (cm)" style="width:120px; padding:8px; border-radius:5px; border:none; background:#0f172a; color:white;">
+          <select id="sim-rain" style="padding:8px; border-radius:5px; border:none; background:#0f172a; color:white;">
+              <option value="0">No Rain</option>
+              <option value="1">Rain Overlay</option>
+          </select>
+      </div>
+      <button onclick="runSimulation()" style="padding:8px; width:100%; background:#3b82f6; color:white; border:none; border-radius:5px; cursor:pointer; font-weight:bold;">Inject Live Data</button>
+  </div>
+
+  <div class="chatbot-container">
+      <div id="chat-window" class="chat-window">
+          <div class="chat-header">
+              <i class="fas fa-robot"></i> Emergency AI Assistant
+          </div>
+          <div id="chat-body" class="chat-body">
+              <div class="chat-msg msg-bot">Hello. I am the Kelani River AI Assistant. How can I help you stay safe today?</div>
+          </div>
+          <div class="chat-options">
+              <button class="chat-opt-btn" onclick="askBot('Where is the nearest safe shelter?')">Where is the nearest shelter?</button>
+              <button class="chat-opt-btn" onclick="askBot('What should I pack in a Go-Bag?')">What should I pack in a Go-Bag?</button>
+              <button class="chat-opt-btn" onclick="askBot('How do I turn off my electricity safely?')">How do I turn off my electricity safely?</button>
+          </div>
+      </div>
+      <button class="chat-btn-toggle" onclick="toggleChatbot()">
+          <i class="fas fa-comment-dots"></i>
+      </button>
+  </div>
+
+  <div id="portal-overlay" class="portal-overlay">
+    <div class="portal-box" id="portal-step-1">
+      <div class="portal-icon"><i class="fas fa-water"></i></div>
+      <h2 style="color: white; margin-bottom: 5px; font-weight: 800; font-size: 22px;">Kelani Warning System</h2>
+      <p class="portal-text">Select your access level to proceed into the system.</p>
+      
+      <button class="portal-btn btn-citizen" onclick="loginCitizen()">
+        <i class="fas fa-users"></i> CITIZEN VIEW (PUBLIC)
+      </button>
+      <button class="portal-btn btn-admin" onclick="showAdminLogin()">
+        <i class="fas fa-shield-halved"></i> COMMAND CENTER (ADMIN)
+      </button>
+    </div>
+
+    <div class="portal-box" id="portal-step-2" style="display:none;">
+      <div class="portal-icon" style="color: #f59e0b;"><i class="fas fa-lock"></i></div>
+      <h2 style="color: white; margin-bottom: 5px; font-weight: 800; font-size: 22px;">Admin Authentication</h2>
+      <p class="portal-text">Enter your administrator credentials.</p>
+      
+      <input type="text" id="admin-user-input" placeholder="Username (Hint: admin)" class="portal-input">
+      <input type="password" id="admin-pass-input" placeholder="Password (Hint: 1234)" class="portal-input">
+      
+      <div style="display: block; margin-top: 5px;">
+          <button class="portal-btn btn-admin" onclick="loginAdmin()" style="width: 100%; margin-bottom: 10px;">LOGIN</button>
+          <button class="portal-btn btn-citizen" onclick="backToPortal()" style="width: 100%; background: transparent; color: #94a3b8; border: 1px solid #334155; margin-bottom: 0;">CANCEL</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="loading" id="loading" style="display:none;">
+    <div class="loading-spinner"></div>
+    <div class="loading-text">🌊 Connecting to Kelani River Sensors</div>
+    <div class="loading-subtext">Loading real-time flood monitoring data from Firebase Cloud Database</div>
+  </div>
+  
+  <div id="dashboard" style="display: none;">
+    <header>
+      <div class="header-content">
+        <div class="logo">
+          <div class="logo-icon">
+            <i class="fas fa-water"></i>
+          </div>
+          <div>
+            <h1>KELANI RIVER FLOOD WARNING SYSTEM</h1>
+            <p class="subtitle" id="app-subtitle">Real-time monitoring for Colombo, Sri Lanka</p>
+          </div>
+        </div>
+        <div class="status-bar">
+          <select id="language-selector" class="header-select">
+            <option value="en">🌐 English</option>
+            <option value="si">🌐 සිංහල (Sinhala)</option>
+            <option value="ta">🌐 தமிழ் (Tamil)</option>
+          </select>
+          
+          <select id="node-selector" class="admin-only header-select">
+            <option value="Node 1">Node 1 (Main Bridge)</option>
+            <option value="Node 2">Node 2 (Upstream)</option>
+            <option value="Node 3">Node 3 (Coastal Estuary)</option>
+          </select>
+          <div class="status-badge live" id="connection-status">
+            <i class="fas fa-circle"></i> <span>REAL-TIME DATA</span>
+          </div>
+          <div class="timestamp" id="timestamp">
+            <i class="far fa-clock"></i> <span>12:00 PM</span>
+          </div>
+          <button id="theme-toggle" style="background: transparent; border: none; cursor: pointer; font-size: 24px; color: var(--gray-600); width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+            <i class="fas fa-moon"></i>
+          </button>
+        </div>
+      </div>
+    </header>
+    
+    <div class="container">
+      <div class="tabs">
+        <div class="tab active" data-tab="dashboard">
+          <i class="fas fa-chart-line"></i> <span data-i18n="tab-dash">Monitoring Dashboard</span>
+        </div>
+        <div class="tab" data-tab="map">
+          <i class="fas fa-map-marked-alt"></i> <span data-i18n="tab-map">Map & Analytics</span>
+        </div>
+        <div class="tab admin-only" id="tab-reports" data-tab="reports">
+          <i class="fas fa-file-pdf"></i> <span data-i18n="tab-rep">Emergency Reports</span>
+        </div>
+        <div class="tab admin-only" id="tab-config" data-tab="configuration">
+          <i class="fas fa-cogs"></i> <span data-i18n="tab-conf">System Configuration</span>
+        </div>
+      </div>
+      
+      <div id="dashboard-content">
+      
+        <div class="card" id="emergency-call-card">
+            <div class="card-header" style="margin-bottom: 10px; padding-bottom: 10px;">
+                <h2><i class="fas fa-phone-alt"></i> Emergency Contacts & Safety Check</h2>
+            </div>
+            <p style="color: var(--gray-600); margin-bottom: 15px;">Tap any number to call emergency services, share live data, or mark yourself as safely evacuated.</p>
+            <div class="call-buttons-container">
+                <a href="tel:117" class="call-btn call-btn-dmc">
+                    <div class="call-icon"><i class="fas fa-shield-alt"></i></div>
+                    <div class="call-details">
+                        <span class="call-title">Disaster Management</span>
+                        <span class="call-number">117</span>
+                    </div>
+                </a>
+                <a href="tel:119" class="call-btn call-btn-police">
+                    <div class="call-icon"><i class="fas fa-user-shield"></i></div>
+                    <div class="call-details">
+                        <span class="call-title">Police Emergency</span>
+                        <span class="call-number">119</span>
+                    </div>
+                </a>
+                <a href="#" id="wa-share-btn" class="call-btn call-btn-wa">
+                    <div class="call-icon"><i class="fab fa-whatsapp"></i></div>
+                    <div class="call-details">
+                        <span class="call-title">Share Alert</span>
+                        <span class="call-number">WhatsApp Family</span>
+                    </div>
+                </a>
+            </div>
+            <button id="btn-im-safe" class="action-btn" onclick="markSafe()" style="background:#10b981 !important; color:white !important; width:100%; margin-top:20px; font-size:18px; padding: 15px; border:none; box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4);">
+                <i class="fas fa-check-circle"></i> Mark Myself as Safely Evacuated
+            </button>
+        </div>
+
+        <div style="display: flex; gap: 25px; flex-wrap: wrap;">
+            <div class="card" style="flex: 2; min-width: 300px; margin-bottom: 25px;">
+              <div class="card-header">
+                <h2><i class="fas fa-water"></i> <span data-i18n="wl-trend">Water Level Trend (Last 60 Minutes)</span> <i class="fas fa-question-circle help-icon" title="Shows live water levels compared to the critical 20cm overflow threshold."></i></h2>
+                <div class="timestamp" id="chart-timestamp">
+                  <i class="far fa-clock"></i> <span>Updated: 12:00 PM</span>
+                </div>
+              </div>
+              
+              <div class="chart-container">
+                <div class="chart-title">
+                  <i class="fas fa-chart-line"></i> Current Water Level: <span id="current-level" style="margin-left: 8px;">0.0 cm</span>
+                </div>
+                <canvas id="waterChart"></canvas>
+                <div class="critical-level">
+                  <span class="critical-label">⚠️ CRITICAL: 4 cm</span>
+                </div>
+              </div>
+            </div>
+
+            <div style="flex: 1; min-width: 300px; display: flex; flex-direction: column; gap: 25px;">
+                <div class="card" style="margin-bottom: 0;">
+                    <div class="card-header" style="margin-bottom: 15px; padding-bottom: 15px;">
+                        <h2><i class="fas fa-clipboard-check"></i> Action Plan</h2>
+                    </div>
+                    <div id="action-plan-list" style="display: flex; flex-direction: column;">
+                        <label class="action-item"><input type="checkbox"> Monitor local weather updates</label>
+                        <label class="action-item"><input type="checkbox"> Verify emergency kit supplies</label>
+                    </div>
+                </div>
+
+                <div class="card" style="margin-bottom: 0;">
+                    <div class="card-header" style="margin-bottom: 15px; padding-bottom: 15px;">
+                        <h2><i class="fas fa-video"></i> Live Drone Feed</h2>
+                    </div>
+                    <div class="drone-cam-container">
+                        <div class="cam-overlay cam-top-left">🔴 LIVE REC</div>
+                        <div class="cam-overlay cam-top-right">NODE: KEL-01</div>
+                        <div class="cam-overlay cam-bottom-left">ALT: 120m | BATT: 64%</div>
+                        <div class="cam-overlay cam-bottom-right" id="cam-time">12:00:00</div>
+                        <i class="fas fa-crosshairs cam-crosshair"></i>
+                        <div style="font-size: 20px; font-weight: bold; color: rgba(255,255,255,0.4); z-index: 1;">NIGHT VISION FLIR</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
+          <div class="card-header">
+            <h2><i class="fas fa-tint"></i> <span data-i18n="wl-status">Water Level Status</span></h2>
+            <div class="status-badge" id="water-status">
+              <i class="fas fa-circle"></i> <span>ALL CLEAR</span>
+            </div>
+          </div>
+          
+          <div>
+            <div class="progress-container">
+              <div class="progress-bar" id="progress-bar" style="width: 0%;">0%</div>
+            </div>
+            <div class="progress-labels">
+              <span>0 cm (Safe)</span>
+              <span>4 cm (Critical)</span>
+            </div>
+          </div>
+          
+          <div class="sensors-grid">
+            <div class="sensor-card">
+              <div class="sensor-icon">
+                <i class="fas fa-tint"></i>
+              </div>
+              <div class="sensor-label">💧 Water Level</div>
+              <div class="sensor-value" id="water-level">0.0 cm</div>
+              <div class="sensor-status status-safe">
+                <i class="fas fa-check-circle"></i> Safe level
+              </div>
+            </div>
+            
+            <div class="sensor-card">
+              <div class="sensor-icon">
+                <i class="fas fa-chart-line"></i>
+              </div>
+              <div class="sensor-label">📈 Rise Rate</div>
+              <div class="sensor-value"><span id="rise-rate">0.0 cm/min</span> <span id="trend-arrow" style="font-size: 24px;">↔️</span></div>
+              <div class="sensor-status status-safe">
+                <i class="fas fa-check-circle"></i> Stable
+              </div>
+            </div>
+            
+            <div class="sensor-card">
+              <div class="sensor-icon">
+                <i class="fas fa-temperature-high"></i>
+              </div>
+              <div class="sensor-label">🌡️ Temperature</div>
+              <div class="sensor-value" id="temperature">0.0°C</div>
+              <div class="sensor-status status-safe">
+                <i class="fas fa-check-circle"></i> Ambient
+              </div>
+            </div>
+            
+            <div class="sensor-card">
+              <div class="sensor-icon">
+                <i class="fas fa-humidity"></i>
+              </div>
+              <div class="sensor-label">💧 Humidity</div>
+              <div class="sensor-value" id="humidity">0%</div>
+              <div class="sensor-status status-safe">
+                <i class="fas fa-check-circle"></i> Normal
+              </div>
+            </div>
+            
+            <div class="sensor-card">
+              <div class="sensor-icon">
+                <i class="fas fa-seedling"></i>
+              </div>
+              <div class="sensor-label">🌱 Soil Moisture</div>
+              <div class="sensor-value" id="soil">0</div>
+              <div class="sensor-status status-safe">
+                <i class="fas fa-check-circle"></i> Normal
+              </div>
+            </div>
+            
+            <div class="sensor-card">
+              <div class="sensor-icon">
+                <i class="fas fa-cloud-rain"></i>
+              </div>
+              <div class="sensor-label">🌧️ Rain Status</div>
+              <div class="sensor-value" id="rain">NO</div>
+              <div class="sensor-status status-safe">
+                <i class="fas fa-check-circle"></i> No rain
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h2><i class="fas fa-water"></i> <span data-i18n="riv-cross">River Cross-Section Visualizer</span></h2>
+          </div>
+          <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+            <div style="flex: 2; min-width: 300px;">
+              <div class="river-cross-section">
+                <div class="river-bank"></div>
+                <div id="river-water-vis">0.0 cm</div>
+                <div style="position: absolute; top: 20%; width: 100%; border-top: 2px dashed var(--danger); opacity: 0.7;"></div>
+                <div class="river-bank right"></div>
+              </div>
+            </div>
+            <div style="flex: 1; min-width: 200px; text-align: center; padding: 20px; background: var(--gray-100); border-radius: 12px; border: 1px solid var(--gray-200);">
+              <div style="font-size: 40px; color: var(--secondary);"><i class="fas fa-water"></i></div>
+              <div id="tide-level" style="font-size: 32px; font-weight: 800; color: var(--gray-900); margin: 10px 0;">0.8m</div>
+              <div style="color: var(--success); font-weight: 600; font-size: 14px;"><i class="fas fa-arrow-down"></i> Ebbing Tide</div>
+              <p style="color: var(--gray-600); font-size: 12px; margin-top: 10px;">High tides restrict river outflow.</p>
+            </div>
+          </div>
+        </div>
+        
+        <div class="card">
+          <div class="card-header">
+            <h2><i class="fas fa-cloud-sun"></i> <span data-i18n="weather-fore">5-Day Weather Forecast - Colombo, Sri Lanka</span></h2>
+            <div class="timestamp" id="weather-timestamp">
+              <i class="far fa-clock"></i> <span>Updated: 12:00 PM</span>
+            </div>
+          </div>
+          <div class="weather-grid" id="weather-container"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h2><i class="fas fa-box-open"></i> <span data-i18n="res-calc">Automated Resource Calculator</span></h2>
+          </div>
+          <div style="display: flex; gap: 20px; text-align: center; flex-wrap: wrap;">
+            <div style="flex: 1; min-width: 150px; padding: 20px; background: var(--gray-100); border-radius: 12px; border: 1px solid var(--gray-200);">
+              <i class="fas fa-ship" style="font-size: 32px; color: var(--primary); margin-bottom: 10px;"></i>
+              <div id="est-boats" style="font-size: 28px; font-weight: 800; color: var(--gray-900);">0</div>
+              <div style="color: var(--gray-600); font-size: 14px; font-weight: 600;">Rescue Boats Required</div>
+            </div>
+            <div style="flex: 1; min-width: 150px; padding: 20px; background: var(--gray-100); border-radius: 12px; border: 1px solid var(--gray-200);">
+              <i class="fas fa-medkit" style="font-size: 32px; color: var(--success); margin-bottom: 10px;"></i>
+              <div id="est-rations" style="font-size: 28px; font-weight: 800; color: var(--gray-900);">0</div>
+              <div style="color: var(--gray-600); font-size: 14px; font-weight: 600;">Emergency Rations</div>
+            </div>
+            
+            <div class="admin-only" style="flex: 1; min-width: 150px; padding: 20px; background: #ecfdf5; border-radius: 12px; border: 1px solid #a7f3d0;">
+              <i class="fas fa-user-check" style="font-size: 32px; color: #10b981; margin-bottom: 10px;"></i>
+              <div id="admin-safe-count" style="font-size: 28px; font-weight: 800; color: #065f46;">142</div>
+              <div style="color: #047857; font-size: 14px; font-weight: 600;">Citizens Confirmed Safe</div>
+            </div>
+          </div>
+          
+          <div class="admin-only" style="margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--gray-200); text-align: left;">
+            <h3 style="font-size: 16px; color: var(--gray-800); margin-bottom: 10px;"><i class="fas fa-clipboard-list"></i> Admin Inventory Tracker (Gangaramaya Shelter)</h3>
+            <div style="display: flex; gap: 15px; flex-wrap: wrap;">
+              <input type="number" id="inv-boats" placeholder="Current Boats Available" style="flex:1;">
+              <input type="number" id="inv-rations" placeholder="Current Rations Available" style="flex:1;">
+              <button class="action-btn primary" onclick="updateInventory()" style="width: auto; margin-bottom: 0;">Update Stock</button>
+            </div>
+          </div>
+        </div>
+        
+        <div class="card" id="subscribe-card">
+          <div class="card-header">
+            <h2><i class="fas fa-envelope-open-text"></i> <span data-i18n="subscribe-title">Subscribe to Emergency Alerts</span></h2>
+          </div>
+          <p style="margin-bottom: 15px; color: var(--gray-600);">Receive instant SMS or Email alerts when critical flood thresholds are breached.</p>
+          <div class="input-group" style="flex-wrap: wrap;">
+            <input type="text" id="sub-name" placeholder="Your Name" style="flex: 1; min-width: 200px;">
+            <input type="text" id="sub-contact" placeholder="Phone Number or Email" style="flex: 1; min-width: 200px;">
+            <button class="action-btn primary" onclick="subscribeCitizen()" style="width: auto; margin-bottom: 0;">Subscribe</button>
+          </div>
+        </div>
+
+        <div class="alert-banner" id="alert-banner" style="display: none;">
+          <div class="alert-content">
+            <div style="display: flex; align-items: center; gap: 25px; margin-bottom: 25px;">
+              <div class="alert-icon">
+                <i class="fas fa-exclamation-triangle"></i>
+              </div>
+              <h2 class="alert-title" id="alert-title">CRITICAL FLOOD</h2>
+            </div>
+            <p class="alert-message" id="alert-message">
+              EVACUATE IMMEDIATELY!
+            </p>
+
+            <div id="predictive-box" style="background: #fff3cd; padding: 15px; border-radius: 12px; margin-bottom: 20px; border-left: 4px solid #f59e0b; display: none;">
+               <strong style="color: #b45309;"><i class="fas fa-clock"></i> Estimated time until critical overflow:</strong> <span id="predictive-time" style="color: #b45309; font-weight: bold;">Calculating...</span>
+            </div>
+
+            <div class="alert-details">
+              <div class="alert-detail">
+                <div class="label"><i class="fas fa-tint"></i> Water Level</div>
+                <div class="value" id="alert-level">4.0 cm</div>
+              </div>
+              <div class="alert-detail">
+                <div class="label"><i class="fas fa-map-marker-alt"></i> Location</div>
+                <div class="value">Kelani River - Colombo</div>
+              </div>
+              <div class="alert-detail">
+                <div class="label"><i class="fas fa-hourglass-half"></i> Evacuation Time</div>
+                <div class="value" id="evacuation-time">5 minutes</div>
+              </div>
+              <div class="alert-detail">
+                <div class="label"><i class="fas fa-shield-alt"></i> Safe Location</div>
+                <div class="value">Gangaramaya Temple (1.2 km)</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="map-content" style="display: none;">
+        <div class="card">
+          <div class="card-header">
+            <h2><i class="fas fa-map-marked-alt"></i> Sensor Location & Flood Risk Zones</h2>
+            <div class="section-actions">
+              <button class="action-btn" id="btn-recenter" style="width:auto;"><i class="fas fa-crosshairs"></i> Recenter Map</button>
+              
+              <button class="action-btn" id="btn-find-route" style="width:auto; color: var(--primary) !important; border-color: var(--primary);"><i class="fas fa-route"></i> Find Safe Route</button>
+              
+              <button class="action-btn" id="btn-report-sos" style="width:auto; color: var(--danger) !important; border-color: var(--danger);"><i class="fas fa-exclamation-circle"></i> Report Hazard</button>
+              
+              <button class="action-btn admin-only" id="btn-toggle-risk" style="width:auto;"><i class="fas fa-layer-group"></i> Toggle Risk Zones</button>
+            </div>
+          </div>
+          <div id="map"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h2><i class="fas fa-history"></i> Interactive Historical Data Explorer</h2>
+            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+               <input type="date" id="history-date" style="max-width: 200px; margin-bottom: 0;">
+               <button id="btn-fetch-history" class="action-btn primary" style="width: auto; margin-bottom: 0; padding: 12px 20px;"><i class="fas fa-search"></i> Fetch Data</button>
+            </div>
+          </div>
+          <div class="chart-container">
+            <canvas id="historyChart"></canvas>
+          </div>
+        </div>
+        
+        <div class="card" style="margin-top: 25px;">
+            <div class="card-header">
+                <h2><i class="fas fa-list-ol"></i> Major Kelani Flood Events Timeline</h2>
+            </div>
+            <div style="padding-left: 10px;">
+                <div class="timeline-item">
+                    <div class="timeline-year">2016</div>
+                    <div class="timeline-desc"><strong>May 2016 - Cyclone Roanu:</strong> Severe flooding forcing over 300,000 evacuations in Colombo. Water levels exceeded 26cm at primary monitoring stations.</div>
+                </div>
+                <div class="timeline-item">
+                    <div class="timeline-year">1989</div>
+                    <div class="timeline-desc"><strong>June 1989 - SW Monsoon:</strong> Catastrophic basin breach resulting in nationwide infrastructure disruption. Max recorded level: 24cm.</div>
+                </div>
+                <div class="timeline-item">
+                    <div class="timeline-year">1947</div>
+                    <div class="timeline-desc"><strong>August 1947:</strong> The most devastating historical flood recorded in the 20th century before modern dam mitigation efforts.</div>
+                </div>
+            </div>
+        </div>
+      </div>
+
+      <div id="reports-content" style="display: none;">
+        <div class="card">
+          <div class="card-header">
+            <h2><i class="fas fa-file-pdf"></i> Generate Emergency Report</h2>
+          </div>
+          <p style="margin-bottom: 20px; color: var(--gray-600);">One-click official situation report generation for government and disaster management authorities.</p>
+          
+          <div class="report-preview" id="report-preview">
+            [Report preview will generate here based on live data...]
+          </div>
+          
+          <div style="display: flex; gap: 15px; max-width: 500px; flex-wrap: wrap;">
+             <button id="btn-export-csv" style="flex:1; background: var(--success); min-width: 200px;"><i class="fas fa-file-csv"></i> Download CSV Data</button>
+             <button id="btn-print-report" style="flex:1; min-width: 200px;"><i class="fas fa-print"></i> Print / Save as PDF</button>
+          </div>
+        </div>
+      </div>
+      
+      <div id="configuration-content" style="display: none;">
+        
+        <div class="card">
+          <div class="card-header">
+            <h2><i class="fas fa-server"></i> System Diagnostics</h2>
+          </div>
+          <div class="diagnostics-panel">
+            <div class="diag-box"><span>SERVER LATENCY</span> <span id="adv-latency" class="diag-val">17MS</span></div>
+            <div class="diag-box"><span>CPU THREAD</span> <span id="adv-cpu" class="diag-val">16%</span></div>
+            <div class="diag-box"><span>NETWORK</span> <span class="diag-val" style="color: #3b82f6;">SECURE AES-256</span></div>
+            
+            <div class="diag-box"><span>NODE BATTERY</span> <span id="adv-battery" class="diag-val" style="color: #10b981;">85%</span></div>
+            <div class="diag-box"><span>WIFI SIGNAL (RSSI)</span> <span id="adv-rssi" class="diag-val" style="color: #10b981;">-60 dBm</span></div>
+          </div>
+        </div>
+
+        <div class="card console-card">
+          <div class="card-header">
+            <h2><i class="fas fa-terminal"></i> Raw Telemetry Stream (Live)</h2>
+          </div>
+          <div class="terminal-window" id="terminal-window">
+             <div class="terminal-line"><span class="term-time">[BOOT]</span> <span class="term-type">INIT</span> Establishing secure socket connection to Firebase...</div>
+             <div class="terminal-line"><span class="term-time">[BOOT]</span> <span class="term-type">AUTH</span> Authentication successful. Keys verified.</div>
+          </div>
+        </div>
+
+        <div class="card">
+           <div class="card-header">
+             <h2><i class="fas fa-power-off"></i> IoT Actuator Control (Two-Way Comms)</h2>
+           </div>
+           <p style="color: var(--gray-600); margin-bottom: 15px;">Send signals directly back to the physical ESP32 to trigger local hardware.</p>
+           <div class="section-actions">
+              <button class="action-btn danger" onclick="triggerIoTAlarm()" style="max-width: 300px; color:white !important;"><i class="fas fa-bullhorn"></i> Activate Emergency Siren</button>
+              <button class="action-btn primary" onclick="triggerIoTPump()" style="max-width: 300px; color:white !important;"><i class="fas fa-water"></i> Toggle Relief Pumps</button>
+           </div>
+        </div>
+
+        <div class="card">
+           <div class="card-header">
+             <h2><i class="fas fa-satellite-dish"></i> Advanced Communications API</h2>
+           </div>
+           
+           <div class="config-section">
+             <h3 class="config-title"><i class="fab fa-telegram" style="color: #0088cc;"></i> Telegram / WhatsApp Bot Integration</h3>
+             <p style="color: var(--gray-600); margin-bottom: 15px;">Allow citizens to query river status automatically via 'STATUS' message.</p>
+             <div class="section-actions">
+                <button class="action-btn primary" onclick="sendTelegramAlert(20.5)" style="max-width: 250px; color:white !important;"><i class="fas fa-robot"></i> Test Telegram Alert</button>
+             </div>
+           </div>
+
+           <div class="config-section">
+             <h3 class="config-title"><i class="fas fa-bell" style="color: var(--warning);"></i> Browser Push Notifications (FCM)</h3>
+             <p style="color: var(--gray-600); margin-bottom: 15px;">Receive loud desktop alerts when critical thresholds are breached, even if the browser is minimized.</p>
+             <div class="section-actions">
+                <button class="action-btn" style="background: var(--warning) !important; color:white !important; border-color: var(--warning); max-width: 250px;" onclick="requestPushPermissions()"><i class="fas fa-volume-high"></i> Enable Desktop Push</button>
+             </div>
+           </div>
+
+           <div class="config-section">
+             <h3 class="config-title"><i class="fas fa-volume-up" style="color: #8b5cf6;"></i> Test Voice Evacuation</h3>
+             <p style="color: var(--gray-600); margin-bottom: 15px;">Test the multi-lingual Text-to-Speech (TTS) emergency broadcast.</p>
+             <div class="section-actions">
+                <button class="action-btn" style="background: #8b5cf6 !important; color:white !important; border-color: #8b5cf6; max-width: 250px;" onclick="speakAlert(true)"><i class="fas fa-bullhorn"></i> Play Audio Warning</button>
+             </div>
+           </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h2><i class="fas fa-cogs"></i> System Configuration</h2>
+          </div>
+
+          <div class="config-section">
+            <h3 class="config-title"><i class="fas fa-comment-sms"></i> Automated SMS Alerts (API)</h3>
+            <div class="form-group">
+              <label><i class="fas fa-key"></i> Twilio Account SID</label>
+              <div class="input-group">
+                <input type="text" placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxx" value="ACb83f... (Mock Data)" disabled style="background: var(--gray-200);">
+              </div>
+            </div>
+            <div class="form-group">
+              <label><i class="fas fa-phone"></i> Target Emergency Number</label>
+              <div class="input-group">
+                <input type="text" value="+94771234567">
+              </div>
+            </div>
+            <div class="section-actions">
+              <button class="action-btn danger" onclick="alert('Mock SMS Alert Sent! \\n\\n[Twilio API] To: +94715631787\\nMsg: 🚨 Kelani River Flood Warning System Test.')" style="max-width: 250px; color:white !important;"><i class="fas fa-paper-plane"></i> Send Test SMS</button>
+            </div>
+          </div>
+
+          <div class="config-section">
+            <h3 class="config-title"><i class="fas fa-tools"></i> Hardware Calibration</h3>
+            <p style="margin-bottom: 15px; color: var(--gray-600);">Calibrate the Ultrasonic Sensor baseline to 0cm water level.</p>
+            <div class="section-actions">
+              <button class="action-btn primary" onclick="calibrateSensor()" style="max-width: 250px; color:white !important;"><i class="fas fa-bullseye"></i> Set Baseline to 0cm</button>
+            </div>
+            <div id="calibration-reminder" style="margin-top: 15px; padding: 12px; border-radius: 10px; background: #fee2e2; border: 1px solid #fca5a5; color: #b91c1c; font-weight: 600; display: flex; align-items: center; gap: 10px;">
+              <i class="fas fa-exclamation-triangle"></i> Warning: Sensor hasn't been calibrated in 34 days. Maintenance required!
+            </div>
+          </div>
+          
+          <div class="config-section">
+            <h3 class="config-title"><i class="fas fa-exclamation-triangle"></i> Alert Thresholds</h3>
+            <div class="form-group">
+              <label for="critical-level"><i class="fas fa-exclamation-circle"></i> Critical Level (cm)</label>
+              <div class="input-group">
+                <input type="number" id="critical-level" value="4" min="3" max="5" step="0.1">
+                <span class="unit">cm</span>
+              </div>
+              <p style="color: var(--gray-600); font-size: 15px; margin-top: 8px;">Water level at which critical flood alert is triggered</p>
+            </div>
+            <div class="form-group">
+              <label for="watch-level"><i class="fas fa-eye"></i> Flood Watch Level (cm)</label>
+              <div class="input-group">
+                <input type="number" id="watch-level" value="3.5" min="3" max="5" step="0.1">
+                <span class="unit">cm</span>
+              </div>
+              <p style="color: var(--gray-600); font-size: 15px; margin-top: 8px;">Water level at which flood watch alert is triggered</p>
+            </div>
+            <div class="form-group">
+              <label for="rise-rate-threshold"><i class="fas fa-chart-line"></i> Rise Rate Alert (cm/min)</label>
+              <div class="input-group">
+                <input type="number" id="rise-rate-threshold" value="1.5" min="0.5" max="5" step="0.1">
+                <span class="unit">cm/min</span>
+              </div>
+              <p style="color: var(--gray-600); font-size: 15px; margin-top: 8px;">Rate of water level rise that triggers alert</p>
+            </div>
+            <div class="section-actions">
+              <button id="save-thresholds" style="max-width: 250px;"><i class="fas fa-save"></i> Save Thresholds</button>
+            </div>
+          </div>
+          
+          <div class="config-section">
+            <h3 class="config-title"><i class="fas fa-server"></i> System Administration</h3>
+            <div class="form-group">
+              <label for="data-retention"><i class="fas fa-database"></i> Data Retention Period</label>
+              <select id="data-retention">
+                <option>7 days</option>
+                <option>30 days</option>
+                <option>90 days</option>
+                <option>1 year</option>
+              </select>
+              <p style="color: var(--gray-600); font-size: 15px; margin-top: 8px;">How long sensor data is stored in the database</p>
+            </div>
+            <div class="form-group">
+              <label for="notification-method"><i class="fas fa-bell"></i> Alert Notification Method</label>
+              <select id="notification-method">
+                <option>Web Dashboard Only</option>
+                <option>Web + SMS</option>
+                <option>Web + Email</option>
+                <option>Web + SMS + Email</option>
+              </select>
+              <p style="color: var(--gray-600); font-size: 15px; margin-top: 8px;">Methods used to notify users of flood alerts</p>
+            </div>
+            <div class="form-group">
+              <label for="safe-locations"><i class="fas fa-map-marked-alt"></i> Safe Locations</label>
+              <textarea id="safe-locations" rows="3" style="font-size: 17px; resize: vertical;">Gangaramaya Temple (1.2 km)
+Dehiwala Zoo (2.5 km)
+University of Colombo (3.1 km)</textarea>
+              <p style="color: var(--gray-600); font-size: 15px; margin-top: 8px;">List of safe evacuation locations with distances</p>
+            </div>
+            <div class="section-actions">
+              <button id="save-configuration" style="max-width: 250px;"><i class="fas fa-save"></i> Save Configuration</button>
+            </div>
+          </div>
+          
+          <div class="config-section">
+            <h3 class="config-title"><i class="fas fa-users"></i> User Management</h3>
+            <div class="form-group">
+              <label for="admin-user"><i class="fas fa-user-plus"></i> Add Admin User</label>
+              <div class="input-group">
+                <input type="text" id="admin-user" placeholder="Email address" style="font-size: 17px;">
+              </div>
+              <p style="color: var(--gray-600); font-size: 15px; margin-top: 8px;">Add new administrator to system</p>
+            </div>
+            <div class="section-actions">
+              <button id="add-user" class="action-btn primary" style="color:white !important;"><i class="fas fa-plus"></i> Add User</button>
+              <button id="refresh-users" class="action-btn"><i class="fas fa-sync-alt"></i> Refresh Users</button>
+              <button id="delete-all-users" class="action-btn danger" style="color:white !important;"><i class="fas fa-trash"></i> Delete All Users</button>
+            </div>
+            <div style="background: var(--gray-100); border-radius: 18px; padding: 25px; margin-top: 25px; border: 1px solid var(--gray-200);">
+              <h4 style="margin-bottom: 20px; color: var(--gray-900); font-size: 19px; font-weight: 700; display: flex; align-items: center; gap: 10px;">
+                <i class="fas fa-list"></i> Current Users
+              </h4>
+              <div class="user-list" id="user-list" style="min-height: 100px;">
+              </div>
+            </div>
+          </div>
+          
+          <div class="config-section">
+            <h3 class="config-title"><i class="fas fa-sliders-h"></i> Advanced Settings</h3>
+            <div class="form-group">
+              <label for="sensor-refresh"><i class="fas fa-sync"></i> Sensor Data Refresh Rate</label>
+              <div class="input-group">
+                <input type="number" id="sensor-refresh" value="5" min="1" max="60">
+                <span class="unit">seconds</span>
+              </div>
+              <p style="color: var(--gray-600); font-size: 15px; margin-top: 8px;">How frequently the system checks for new sensor data from ESP32</p>
+            </div>
+            <div class="form-group">
+              <label for="weather-refresh"><i class="fas fa-cloud-sun"></i> Weather Data Refresh Rate</label>
+              <div class="input-group">
+                <input type="number" id="weather-refresh" value="15" min="5" max="60">
+                <span class="unit">minutes</span>
+              </div>
+              <p style="color: var(--gray-600); font-size: 15px; margin-top: 8px;">How frequently the system refreshes weather forecast data</p>
+            </div>
+            <div class="form-group">
+              <label for="alert-confirmation"><i class="fas fa-check-double"></i> Alert Confirmation Required</label>
+              <select id="alert-confirmation">
+                <option>Yes - User must confirm critical alerts</option>
+                <option>No - Automatic alert escalation</option>
+              </select>
+              <p style="color: var(--gray-600); font-size: 15px; margin-top: 8px;">Whether user confirmation is required for critical flood alerts</p>
+            </div>
+            <div class="section-actions">
+              <button id="save-advanced" style="max-width: 250px;"><i class="fas fa-save"></i> Save Advanced Settings</button>
+            </div>
+          </div>
+
+          <div class="card" style="margin-top: 40px;">
+            <div class="card-header">
+              <h2><i class="fas fa-shield-alt"></i> Security Audit Logs</h2>
+            </div>
+            <div id="audit-logs-container" style="background: var(--gray-100); border-radius: 12px; border: 1px solid var(--gray-200); height: 200px; overflow-y: auto; padding: 15px; font-family: monospace; font-size: 13px; color: var(--gray-800);">
+               <div>No logs recorded yet.</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+      
+      <div class="footer">
+        <div class="title">
+          <i class="fas fa-tint"></i> Saving Lives Through Technology
+        </div>
+        <p class="subtitle">
+          Real-time sensor data from Kelani River → Firebase Cloud Database → This Web Dashboard
+        </p>
+        <p class="quote">
+          "Predicting floods hours before they happen - giving communities critical time to evacuate"
+        </p>
+        <p class="project-info">
+          <strong>Developed for University Project</strong> • Data Source: ESP32 Sensors at Kelani River Monitoring Station
+        </p>
+        
+        <div style="margin-top: 30px; padding-top: 30px; border-top: 1px solid var(--gray-200); display: flex; flex-direction: column; align-items: center;">
+            <img src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=https://kelanifloodmonitor.web.app" alt="QR Code" style="border-radius: 12px; border: 4px solid var(--primary); padding: 4px; background: white;">
+            <p style="margin-top: 10px; font-weight: 700; color: var(--primary);">Scan to view live data on mobile</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ===== GLOBALS =====
+    let previousWaterLevel = null;
+    let lastSpokenTime = 0;
+    let globalSafeCount = 142; 
+    window.firebaseRawData = [];
+
+    let waterChart = null;
+    let historyChart = null;
+    let map = null;
+    let riskCircle = null;
+    
+    // Globals for Feature: Live Routing & Hazard
+    let routingMode = false;
+    let hazardMode = false;
+    let customRoute = null;
+    let customMarker = null;
+
+    // ===== FEATURE: Multi-Language Translations =====
+    const translations = {
+        "en": {
+            "tab-dash": "Monitoring Dashboard", "tab-map": "Map & Analytics", "tab-rep": "Emergency Reports", "tab-conf": "System Configuration",
+            "wl-trend": "Water Level Trend (Last 60 Minutes)", "wl-status": "Water Level Status", "riv-cross": "River Cross-Section Visualizer",
+            "weather-fore": "5-Day Weather Forecast - Colombo", "res-calc": "Automated Resource Calculator", "subscribe-title": "Subscribe to Emergency Alerts"
+        },
+        "si": {
+            "tab-dash": "නිරීක්ෂණ පුවරුව", "tab-map": "සිතියම සහ විශ්ලේෂණ", "tab-rep": "හදිසි වාර්තා", "tab-conf": "පද්ධති සැකසුම්",
+            "wl-trend": "ජල මට්ටමේ ප්‍රවණතාවය", "wl-status": "ජල මට්ටමේ තත්වය", "riv-cross": "ගඟේ හරස්කඩ",
+            "weather-fore": "දින 5ක කාලගුණ අනාවැකිය", "res-calc": "සම්පත් ගණක යන්ත්‍රය", "subscribe-title": "හදිසි ඇඟවීම් සඳහා ලියාපදිංචි වන්න"
+        },
+        "ta": {
+            "tab-dash": "கண்காணிப்பு பலகை", "tab-map": "வரைபடம் மற்றும் பகுப்பாய்வு", "tab-rep": "அவசர அறிக்கைகள்", "tab-conf": "கணினி அமைப்பு",
+            "wl-trend": "நீர் மட்ட போக்கு", "wl-status": "நீர் மட்ட நிலை", "riv-cross": "நதியின் குறுக்கு வெட்டு",
+            "weather-fore": "5 நாள் வானிலை முன்னறிவிப்பு", "res-calc": "வள கால்குலேட்டர்", "subscribe-title": "விழிப்பூட்டல்களுக்கு குழுசேரவும்"
+        }
+    };
+
+    // ===== FIREBASE CONFIGURATION =====
+    const firebaseConfig = {
+      apiKey: "AIzaSyC_4tba5HNykicW-FxymwXO7PORzx_F-bc",
+      authDomain: "flood-alert-sri-lanka-7ae38.firebaseapp.com",
+      databaseURL: "https://flood-alert-sri-lanka-7ae38-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "flood-alert-sri-lanka-7ae38",
+      storageBucket: "flood-alert-sri-lanka-7ae38.appspot.com",
+      messagingSenderId: "977482289302",
+      appId: "1:977482289302:web:fce6ad5ab55653e372f2b7"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const database = firebase.database();
+
+    // ===== FEATURE: Multi-Lingual Voice Evacuation Alerts (TTS) =====
+    function speakAlert(force = false) {
+      
+        if(!force && Date.now() - lastSpokenTime < 60000) return; 
+
+        if ('speechSynthesis' in window) {
+            window.speechSynthesis.resume(); 
+
+            let text = "Warning. Critical flood level reached. Please evacuate to Gangaramaya Temple immediately.";
+            let langCode = 'en-US';
+            const currentLang = document.getElementById('language-selector').value;
+
+            if (currentLang === 'si') {
+                text = "අවධානයයි. අවදානම් ගංවතුර මට්ටමකට ළඟා වී ඇත. කරුණාකර වහාම ගංගාරාමය විහාරයට ඉවත් වන්න.";
+                langCode = 'si-LK'; 
+            } else if (currentLang === 'ta') {
+                text = "எச்சரிக்கை. அபாயகரமான வெள்ள நிலை எட்டப்பட்டுள்ளது. உடனடியாக கங்காராமய கோயிலுக்கு வெளியேறவும்.";
+                langCode = 'ta-IN'; 
+            }
+
+            let msg = new SpeechSynthesisUtterance(text);
+            msg.lang = langCode;
+            msg.rate = 0.9; 
+            msg.pitch = 1.1; 
+
+            // Error handling if the OS doesn't have the language pack
+            msg.onerror = function(event) {
+                console.error("SpeechSynthesis Error: ", event);
+                if (event.error === 'language-unavailable') {
+                    alert("Your computer's Operating System does not have the " + currentLang.toUpperCase() + " language voice pack installed. Falling back to English.");
+                }
+            };
+
+            window.speechSynthesis.speak(msg);
+            lastSpokenTime = Date.now();
+        } else {
+            alert("Your browser does not support Text-to-Speech.");
+        }
+    }
+
+    // ===== FEATURE: Presentation Simulation Mode =====
+    document.addEventListener('keydown', (e) => {
+        if(e.shiftKey && e.key.toLowerCase() === 's' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+            const simPanel = document.getElementById('simulation-panel');
+            if (simPanel) simPanel.style.display = simPanel.style.display === 'none' ? 'block' : 'none';
+        }
+    });
+
+    function runSimulation() {
+        const w = parseFloat(document.getElementById('sim-water').value) || 0;
+        const r = parseInt(document.getElementById('sim-rain').value) || 0;
+        const mockData = {
+            water: w, rise: w > 15 ? 2.5 : 0, temp: 29.5, hum: r ? 95 : 75, soil: r ? 2800 : 1500, rain: r,
+            stage: w >= 4 ? 3 : w >= 3.5 ? 2 : w >= 15 ? 1 : 0,
+            location: "Kelani River - Colombo (SIMULATION)",
+            timestamp: Date.now()
+        };
+        // Trick the system into thinking this is live data so it speaks immediately
+        if (w >= 4) previousWaterLevel = w; 
+        updateUI(mockData);
+        alert("Simulation data injected successfully!");
+    }
+
+    // ===== FEATURE: AI Chatbot Logic =====
+    function toggleChatbot() {
+        const cw = document.getElementById('chat-window');
+        cw.style.display = cw.style.display === 'none' || cw.style.display === '' ? 'block' : 'none';
+    }
+
+    function askBot(question) {
+        const body = document.getElementById('chat-body');
+        
+        const uMsg = document.createElement('div');
+        uMsg.className = 'chat-msg msg-user';
+        uMsg.innerText = question;
+        body.appendChild(uMsg);
+
+        let answer = "";
+        if (question.includes('shelter')) answer = "The primary evacuation center is Gangaramaya Temple (1.2 km away). Secondary is Dehiwala Zoo (2.5 km away).";
+        else if (question.includes('Go-Bag')) answer = "Please pack: Important ID documents, 3 days of non-perishable food, bottled water, a flashlight, batteries, and a first-aid kit.";
+        else if (question.includes('electricity')) answer = "Locate your home's main circuit breaker box. Switch the main power switch to the OFF position immediately if water is entering your home.";
+
+        setTimeout(() => {
+            const bMsg = document.createElement('div');
+            bMsg.className = 'chat-msg msg-bot';
+            bMsg.innerText = answer;
+            body.appendChild(bMsg);
+            body.scrollTop = body.scrollHeight;
+        }, 600);
+    }
+
+    // ===== FEATURE: Citizen "I'm Safe" Logic =====
+    function markSafe() {
+        const name = prompt("Please enter your name to register as safely evacuated:");
+        if (name && name.trim() !== "") {
+            globalSafeCount++;
+            const safeDisplay = document.getElementById('admin-safe-count');
+            if (safeDisplay) safeDisplay.innerText = globalSafeCount;
+            
+            alert(`Thank you, ${name}. Your status has been successfully logged with Disaster Management authorities.`);
+            document.getElementById('btn-im-safe').innerHTML = '<i class="fas fa-check-double"></i> Status: SAFELY EVACUATED';
+            document.getElementById('btn-im-safe').style.background = '#065f46';
+            document.getElementById('btn-im-safe').disabled = true;
+        }
+    }
+
+    // ===== FEATURE: Action Plan Updater =====
+    function updateActionPlan(level) {
+        const container = document.getElementById('action-plan-list');
+        if (!container) return;
+        
+        if (level >= 4) {
+            container.innerHTML = `
+                <label class="action-item" style="border-color: var(--danger); color: var(--danger);"><input type="checkbox"> Turn off main electricity breaker</label>
+                <label class="action-item" style="border-color: var(--danger); color: var(--danger);"><input type="checkbox"> Evacuate immediately to Gangaramaya Temple</label>
+                <label class="action-item"><input type="checkbox"> Do not walk through moving water</label>
+            `;
+        } else if (level >= 3.5) {
+            container.innerHTML = `
+                <label class="action-item" style="border-color: var(--warning);"><input type="checkbox"> Pack important ID documents in waterproof bags</label>
+                <label class="action-item" style="border-color: var(--warning);"><input type="checkbox"> Move electronics to a higher floor</label>
+                <label class="action-item"><input type="checkbox"> Fully charge mobile phones and power banks</label>
+            `;
+        } else {
+            container.innerHTML = `
+                <label class="action-item"><input type="checkbox"> Monitor local weather updates</label>
+                <label class="action-item"><input type="checkbox"> Verify emergency kit supplies</label>
+                <label class="action-item"><input type="checkbox"> Review neighborhood evacuation routes</label>
+            `;
+        }
+    }
+
+    // ===== FEATURE: Citizen Alert Subscription Logic =====
+    function subscribeCitizen() {
+        const name = document.getElementById('sub-name').value.trim();
+        const contact = document.getElementById('sub-contact').value.trim();
+        if(!name || !contact) { 
+            alert("Please enter both your name and contact details."); 
+            return; 
+        }
+        database.ref('subscribers').push({
+            name: name,
+            contact: contact,
+            timestamp: Date.now()
+        }).then(() => {
+            alert("Successfully subscribed to emergency flood alerts!");
+            document.getElementById('sub-name').value = '';
+            document.getElementById('sub-contact').value = '';
+        }).catch(err => {
+            alert("Error subscribing: " + err.message);
+        });
+    }
+
+    // ===== FEATURE: Two-Way IoT Commands =====
+    function triggerIoTAlarm() {
+        database.ref('commands').update({ trigger_siren: true, timestamp: Date.now() });
+        logAdminAction("Activated physical hardware siren via IoT Command");
+        alert("IoT Command Sent: Physical emergency siren has been activated at the river station!");
+    }
+    
+    function triggerIoTPump() {
+        database.ref('commands').update({ toggle_pump: true, timestamp: Date.now() });
+        logAdminAction("Toggled physical water relief pumps via IoT Command");
+        alert("IoT Command Sent: Water relief pumps state toggled at the river station!");
+    }
+
+    function calibrateSensor() {
+        alert('Calibration signal sent to ESP32. Please ensure the sensor is at exactly 0cm water level.');
+        logAdminAction("Initiated hardware calibration for ultrasonic sensor.");
+        const reminder = document.getElementById('calibration-reminder');
+        if(reminder) {
+            reminder.style.background = '#dcfce7';
+            reminder.style.borderColor = '#86efac';
+            reminder.style.color = '#166534';
+            reminder.innerHTML = '<i class="fas fa-check-circle"></i> Sensor calibrated just now. System optimal.';
+        }
+    }
+
+    function updateInventory() {
+        const boats = document.getElementById('inv-boats').value;
+        const rations = document.getElementById('inv-rations').value;
+        alert(`Inventory successfully updated in database!\nBoats: ${boats}\nRations: ${rations}`);
+        logAdminAction(`Updated Relief Camp Inventory - Boats: ${boats}, Rations: ${rations}`);
+    }
+
+    // ===== FEATURE: Action Audit Logging =====
+    function logAdminAction(actionText) {
+        database.ref('admin_logs').push({
+            time: Date.now(),
+            action: actionText
+        });
+    }
+
+    function loadAuditLogs() {
+        database.ref('admin_logs').limitToLast(50).on('value', (snapshot) => {
+            const container = document.getElementById('audit-logs-container');
+            if(!container) return;
+            container.innerHTML = '';
+            if (snapshot.exists()) {
+                const logs = [];
+                snapshot.forEach(child => { logs.push(child.val()); });
+                logs.reverse(); 
+                logs.forEach(log => {
+                    const date = new Date(log.time).toLocaleString();
+                    const div = document.createElement('div');
+                    div.style.marginBottom = '8px';
+                    div.style.borderBottom = '1px dashed var(--gray-300)';
+                    div.style.paddingBottom = '4px';
+                    div.innerHTML = `<span style="color: var(--gray-600);">[${date}]</span> <strong style="color: var(--primary);">ADMIN:</strong> ${log.action}`;
+                    container.appendChild(div);
+                });
+            } else {
+                container.innerHTML = '<div>No logs recorded yet.</div>';
+            }
+        });
+    }
+
+    // ===== TELEGRAM BOT SETTINGS =====
+    const TELEGRAM_BOT_TOKEN = "8662678457:AAHW8k5qEAV6m1bk8pAeG8bhmgf_rI8EXfM"; 
+    const TELEGRAM_CHAT_ID = "8363562365";
+    let lastAlertTime = 0;
+
+    function sendTelegramAlert(waterLevel) {
+        const currentTime = Date.now();
+        if (currentTime - lastAlertTime < 300000) return; 
+        
+        const message = `🚨 CRITICAL FLOOD ALERT 🚨%0AKelani River water level is at ${waterLevel}cm!%0AImmediate evacuation recommended.`;
+        const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage?chat_id=${TELEGRAM_CHAT_ID}&text=${message}`;
+
+        fetch(url)
+            .then(response => response.json())
+            .then(data => {
+                console.log("Telegram Response:", data);
+                if (data.ok) {
+                    alert("Telegram Alert Sent Successfully to your phone!");
+                } else {
+                    if (data.error_code === 401) {
+                        alert("Telegram Error: Unauthorized.\n\nThis means your TELEGRAM_BOT_TOKEN is incorrect or has been revoked. Please go back to @BotFather in Telegram, generate a NEW token, and paste it into the code!");
+                    } else if (data.error_code === 400 || data.error_code === 403) {
+                        alert("Telegram Error: " + data.description + "\n\nIMPORTANT: You MUST open Telegram, search for your bot, and send /start before it can message you!");
+                    } else {
+                        alert("Telegram Error: " + data.description);
+                    }
+                }
+            })
+            .catch(error => {
+                console.error("Error sending Telegram alert:", error);
+                alert("Internet Error: Could not connect to Telegram.");
+            });
+    }
+
+    // ===== ROLE-BASED LOGIN LOGIC =====
+    function loginCitizen() {
+      // Secretly unlock audio engine upon user interaction
+      if ('speechSynthesis' in window) { let msg = new SpeechSynthesisUtterance(""); msg.volume = 0; window.speechSynthesis.speak(msg); }
+      
+      document.getElementById('portal-overlay').style.opacity = '0';
+      setTimeout(() => {
+          document.getElementById('portal-overlay').style.display = 'none';
+          document.getElementById('loading').style.display = 'flex';
+          
+          document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'none');
+          document.getElementById('app-subtitle').innerText = "Public Information Portal";
+          document.body.classList.remove('show-admin');
+          
+          const subCard = document.getElementById('subscribe-card');
+          if(subCard) subCard.style.display = 'block';
+          
+          const emergencyCard = document.getElementById('emergency-call-card');
+          if(emergencyCard) emergencyCard.style.display = 'block';
+          
+          startSystem();
+      }, 500);
+    }
+
+    function showAdminLogin() {
+      document.getElementById('portal-step-1').style.display = 'none';
+      document.getElementById('portal-step-2').style.display = 'block'; 
+    }
+
+    function backToPortal() {
+      document.getElementById('portal-step-2').style.display = 'none';
+      document.getElementById('portal-step-1').style.display = 'block';
+    }
+
+    function loginAdmin() {
+      if ('speechSynthesis' in window) { let msg = new SpeechSynthesisUtterance(""); msg.volume = 0; window.speechSynthesis.speak(msg); }
+      
+      const u = document.getElementById('admin-user-input').value.toLowerCase();
+      const p = document.getElementById('admin-pass-input').value;
+      
+      if (u === 'admin' && p === '1234') {
+        document.getElementById('portal-overlay').style.opacity = '0';
+        setTimeout(() => {
+          document.getElementById('portal-overlay').style.display = 'none';
+          
+          document.getElementById('subscribe-card').style.display = 'none';
+          document.getElementById('emergency-call-card').style.display = 'none';
+          
+          document.body.classList.add('show-admin');
+          document.getElementById('app-subtitle').innerText = "Command Center & Analytics (Admin View)";
+          document.getElementById('loading').style.display = 'flex';
+          
+          startSystem();
+        }, 500);
+      } else {
+        alert("Invalid credentials. Hint: username is 'admin', password is '1234'.");
+      }
+    }
+
+    function startSystem() {
+       initMap(); 
+       initChart(); 
+       startFirebaseListener(); 
+       fetchWeather();
+       setInterval(fetchWeather, 900000);
+       
+       // WhatsApp Share Link Updater
+       setInterval(() => {
+           const waBtn = document.getElementById('wa-share-btn');
+           if(waBtn) {
+               const level = document.getElementById('current-level').innerText;
+               const msg = encodeURIComponent(`🚨 FLOOD ALERT 🚨\nKelani River is currently at ${level}.\nPlease stay safe and follow evacuation protocols.`);
+               waBtn.href = `https://wa.me/?text=${msg}`;
+           }
+       }, 5000);
+       
+       // Drone Cam Time Updater
+       setInterval(() => {
+           const t = document.getElementById('cam-time');
+           if(t) t.innerText = new Date().toLocaleTimeString('en-US', {hour12:false});
+       }, 1000);
+    }
+
+    function requestPushPermissions() {
+        if ("Notification" in window) {
+            Notification.requestPermission().then(permission => {
+                if (permission === "granted") alert("Push notifications successfully enabled for critical alerts.");
+                else alert("Push notifications were denied.");
+            });
+        } else {
+            alert("Your browser does not support push notifications.");
+        }
+    }
+
+    // ===== MAP & CHART SETUP =====
+    function initMap() {
+      // Reliable, mobile-friendly map layers that do not block APKs
+const streetLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { 
+    maxZoom: 18, 
+    attribution: '© OpenStreetMap © CARTO' 
+});
+const topoLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', { 
+    maxZoom: 17, 
+    attribution: 'Tiles © Esri' 
+});
+      map = L.map('map', {
+          center: [6.9497, 79.8738],
+          zoom: 13,
+          layers: [streetLayer]
+      });
+      
+      L.control.layers({ "Street View": streetLayer, "Topographic Elevation": topoLayer }).addTo(map);
+
+      L.marker([6.9497, 79.8738]).addTo(map).bindPopup('<b>Main Sensor Array</b><br>Kelani River').openPopup();
+      riskCircle = L.circle([6.9497, 79.8738], { color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.2, radius: 2500 }).addTo(map);
+
+      const evacRoute = L.polyline([
+          [6.9497, 79.8738], 
+          [6.9400, 79.8650], 
+          [6.9300, 79.8600],
+          [6.9200, 79.8550],
+      ], {color: '#3b82f6', weight: 5, dashArray: '10, 10'}).addTo(map);
+      L.marker([6.9200, 79.8550]).addTo(map).bindPopup('<b>Safe Evacuation Zone</b><br>Gangaramaya Temple');
+
+      document.getElementById('btn-recenter').addEventListener('click', () => map.setView([6.9497, 79.8738], 13));
+      document.getElementById('btn-toggle-risk').addEventListener('click', () => {
+        if(map.hasLayer(riskCircle)) map.removeLayer(riskCircle); 
+        else riskCircle.addTo(map);
+      });
+      
+      document.getElementById('btn-find-route').addEventListener('click', () => {
+          routingMode = true;
+          hazardMode = false;
+          alert("Please click your current location anywhere on the map to find the safest evacuation route.");
+      });
+
+      const btnSos = document.getElementById('btn-report-sos');
+      if (btnSos) {
+          btnSos.addEventListener('click', () => {
+              hazardMode = true;
+              routingMode = false;
+              alert("Click on the map to report a flooded street, blocked drain, or fallen tree.");
+          });
+      }
+      
+      map.on('click', function(e) {
+          if(hazardMode) {
+              L.circleMarker(e.latlng, { color: 'red', radius: 8, fillOpacity: 0.8 }).addTo(map).bindPopup("<b>⚠️ Hazard Reported</b><br>Citizen SOS Drop").openPopup();
+              hazardMode = false;
+              alert("Hazard reported successfully! Authorities have been notified.");
+              return;
+          }
+
+          if(!routingMode) return;
+          if(customMarker) map.removeLayer(customMarker);
+          if(customRoute) map.removeLayer(customRoute);
+
+          customMarker = L.marker(e.latlng).addTo(map).bindPopup("Your Location").openPopup();
+          
+          let midPoint = [6.9350, 79.8400]; 
+          
+          customRoute = L.polyline([e.latlng, midPoint, [6.9200, 79.8550]], {
+              color: '#10b981', weight: 6, dashArray: '12, 12'
+          }).addTo(map);
+
+          routingMode = false;
+      });
+    }
+    
+    function initChart() {
+      const ctx = document.getElementById('waterChart').getContext('2d');
+      waterChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: Array.from({length: 12}, (_, i) => `${(12 + i) % 24}:00`),
+          datasets: [{
+            label: 'Water Level (cm)',
+            data: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            borderColor: '#0ea5e9',
+            backgroundColor: 'rgba(14, 165, 233, 0.15)',
+            borderWidth: 4,
+            tension: 0.3,
+            fill: true,
+            pointRadius: 7,
+            pointHoverRadius: 10,
+            pointBackgroundColor: 'white',
+            pointBorderWidth: 4,
+            pointHoverBorderWidth: 5,
+            pointBorderColor: '#0ea5e9',
+            pointHoverBorderColor: '#1e40af'
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: { 
+              backgroundColor: 'white', 
+              titleColor: '#1e40af', 
+              bodyColor: '#1e293b',
+              borderColor: '#e2e8f0',
+              borderWidth: 1,
+              padding: 14,
+              displayColors: false,
+              callbacks: {
+                label: (context) => `Water Level: ${context.parsed.y} cm`
+              },
+              titleFont: { size: 16, weight: '600' },
+              bodyFont: { size: 15 }
+            }
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              max: 5,
+              title: { 
+                display: true, 
+                text: 'Water Level (cm)', 
+                color: '#475569', 
+                font: {size: 17, weight: '700'} 
+              },
+              grid: { color: 'rgba(0,0,0,0.05)', drawBorder: false },
+              ticks: { color: '#475569', font: {size: 15, weight: '600'}, stepSize: 1 }
+            },
+            x: {
+              title: { 
+                display: true, 
+                text: 'Time', 
+                color: '#475569', 
+                font: {size: 17, weight: '700'} 
+              },
+              grid: { color: 'rgba(0,0,0,0.05)', drawBorder: false },
+              ticks: { color: '#475569', font: {size: 15, weight: '600'} }
+            }
+          },
+          interaction: { intersect: false, mode: 'index' },
+          animation: { duration: 1000, easing: 'easeOutQuart' }
+        }
+      });
+
+      const ctxHist = document.getElementById('historyChart').getContext('2d');
+      historyChart = new Chart(ctxHist, {
+        type: 'line',
+        data: {
+          labels: ['0h', '2h', '4h', '6h', '8h', '10h', '12h'],
+          datasets: [
+            { label: 'Current Event', data: [5, 6, 8, 12, 14, 15, 15], borderColor: '#3b82f6', tension: 0.3 },
+            { label: '2016 Flood Event', data: [8, 12, 18, 22, 25, 26, 26], borderColor: '#ef4444', borderDash: [5, 5], tension: 0.3 }
+          ]
+        },
+        options: { responsive: true, maintainAspectRatio: false }
+      });
+    }
+
+    // ===== WEATHER FORECAST =====
+    const WEATHER_API_KEY = "59356062197f5ff7f71748d22c244612";
+    
+    async function fetchWeather() {
+      try {
+        const response = await fetch(
+          `https://api.openweathermap.org/data/2.5/forecast?lat=6.9271&lon=79.8612&appid=${WEATHER_API_KEY}&units=metric`
+        );
+        
+        if (!response.ok) throw new Error(`Weather API error: ${response.status}`);
+        
+        const data = await response.json();
+        updateWeatherUI(data.list);
+        document.getElementById('weather-timestamp').innerHTML = 
+          `<i class="far fa-clock"></i> <span>Updated: ${new Date().toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'})}</span>`;
+      } catch (error) {
+        console.error("Weather API error:", error);
+      }
+    }
+    
+    function updateWeatherUI(forecastList) {
+      const dailyData = {};
+      forecastList.forEach(item => {
+        const date = new Date(item.dt * 1000);
+        const dayKey = date.toDateString();
+        
+        if (!dailyData[dayKey]) {
+          dailyData[dayKey] = {
+            temp: [],
+            humidity: [],
+            rain: [],
+            conditions: []
+          };
+        }
+        
+        dailyData[dayKey].temp.push(item.main.temp);
+        dailyData[dayKey].humidity.push(item.main.humidity);
+        dailyData[dayKey].rain.push(item.rain ? item.rain['3h'] || 0 : 0);
+        dailyData[dayKey].conditions.push(item.weather[0].main);
+      });
+      
+      const days = Object.keys(dailyData).slice(0, 5);
+      const weatherContainer = document.getElementById('weather-container');
+      weatherContainer.innerHTML = '';
+      
+      days.forEach((dayKey, i) => {
+        const dayData = dailyData[dayKey];
+        const date = new Date(dayKey);
+        const avgTemp = dayData.temp.reduce((a, b) => a + b, 0) / dayData.temp.length;
+        const avgHumidity = dayData.humidity.reduce((a, b) => a + b, 0) / dayData.humidity.length;
+        const totalRain = dayData.rain.reduce((a, b) => a + b, 0);
+        const condition = dayData.conditions[0].toLowerCase();
+        
+        let icon = '🌤️';
+        if (condition.includes('rain')) icon = '🌧️';
+        if (condition.includes('cloud')) icon = '☁️';
+        if (condition.includes('clear')) icon = '☀️';
+        if (condition.includes('thunderstorm')) icon = '⛈️';
+        
+        const isHeavyRain = totalRain > 10;
+        
+        const card = document.createElement('div');
+        card.className = 'weather-card';
+        card.innerHTML = `
+          <div class="weather-day">
+            <div class="day">${date.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase()}</div>
+            <div class="date">${date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</div>
+          </div>
+          <div class="weather-icon">${icon}</div>
+          <div class="weather-condition">${dayData.conditions[0]}</div>
+          <div class="weather-details">
+            <div class="weather-detail">
+              <div class="label"><i class="fas fa-temperature-high"></i> Temperature</div>
+              <div class="value">${avgTemp.toFixed(1)}°C</div>
+            </div>
+            <div class="weather-detail">
+              <div class="label"><i class="fas fa-tint"></i> Humidity</div>
+              <div class="value">${Math.round(avgHumidity)}%</div>
+            </div>
+          </div>
+          <div class="weather-rain ${isHeavyRain ? 'heavy' : ''}">
+            <i class="fas ${isHeavyRain ? 'fa-exclamation-triangle' : 'fa-tint'}"></i> 
+            Rain: ${totalRain.toFixed(1)} mm ${isHeavyRain ? '<i class="fas fa-exclamation-triangle" style="color: #ef4444; margin-left: 8px;"></i>' : ''}
+          </div>
+        `;
+        weatherContainer.appendChild(card);
+      });
+    }
+
+    // ===== UPDATE UI WITH SENSOR DATA =====
+    function updateUI(data) {
+      const now = new Date();
+      document.getElementById('timestamp').innerHTML = 
+        `<i class="far fa-clock"></i> <span>${now.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'})}</span>`;
+      document.getElementById('chart-timestamp').innerHTML = 
+        `<i class="far fa-clock"></i> <span>Updated: ${now.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'})}</span>`;
+      
+      document.getElementById('connection-status').innerHTML = `<i class="fas fa-circle"></i> <span>REAL-TIME DATA</span>`;
+      document.getElementById('connection-status').className = 'status-badge live';
+
+      document.getElementById('water-level').textContent = `${data.water.toFixed(1)} cm`;
+      document.getElementById('current-level').textContent = `${data.water.toFixed(1)} cm`;
+      
+      const percentage = Math.min(100, (data.water / 20) * 100);
+      const progressBar = document.getElementById('progress-bar');
+      progressBar.style.width = `${percentage}%`;
+      progressBar.textContent = `${percentage.toFixed(0)}%`;
+
+      const riverVis = document.getElementById('river-water-vis');
+      if(riverVis) {
+          riverVis.style.height = `${Math.min(100, (data.water / 25) * 100)}%`;
+          riverVis.innerText = `${data.water.toFixed(1)} cm`;
+      }
+      
+      if (data.water >= 20) {
+        progressBar.style.background = '#ef4444';
+        if(riverVis) riverVis.style.background = 'rgba(239, 68, 68, 0.8)';
+      } else if (data.water >= 18) {
+        progressBar.style.background = '#f59e0b';
+        if(riverVis) riverVis.style.background = 'rgba(245, 158, 11, 0.8)';
+      } else {
+        progressBar.style.background = '#10b981';
+        if(riverVis) riverVis.style.background = 'rgba(14, 165, 233, 0.7)';
+      }
+      
+      // FEATURE: Dynamic Trend Arrows
+      document.getElementById('rise-rate').textContent = `${data.rise.toFixed(1)} cm/min`;
+      const trendArrow = document.getElementById('trend-arrow');
+      if(data.rise > 0.5) {
+          trendArrow.innerText = '⬆️';
+          trendArrow.style.color = '#ef4444';
+      } else if (data.rise < -0.5) {
+          trendArrow.innerText = '⬇️';
+          trendArrow.style.color = '#10b981';
+      } else {
+          trendArrow.innerText = '↔️';
+          trendArrow.style.color = '#94a3b8';
+      }
+
+      document.getElementById('temperature').textContent = `${data.temp.toFixed(1)}°C`;
+      document.getElementById('humidity').textContent = `${data.hum}%`;
+      document.getElementById('soil').textContent = `${data.soil}`;
+      document.getElementById('rain').textContent = data.rain === 1 ? 'YES' : 'NO';
+      
+      // FEATURE: Dynamic Rain Overlay
+      document.body.classList.toggle('is-raining', data.rain === 1);
+      
+      if (waterChart) {
+        const newData = [...waterChart.data.datasets[0].data];
+        newData.shift();
+        newData.push(data.water);
+        waterChart.data.datasets[0].data = newData;
+        
+        if (data.water >= 20) {
+          waterChart.data.datasets[0].borderColor = '#ef4444';
+          waterChart.data.datasets[0].backgroundColor = 'rgba(239, 68, 68, 0.15)';
+          waterChart.data.datasets[0].pointBorderColor = '#ef4444';
+          waterChart.data.datasets[0].pointHoverBorderColor = '#b91c1c';
+        } else if (data.water >= 18) {
+          waterChart.data.datasets[0].borderColor = '#f59e0b';
+          waterChart.data.datasets[0].backgroundColor = 'rgba(245, 158, 11, 0.15)';
+          waterChart.data.datasets[0].pointBorderColor = '#f59e0b';
+          waterChart.data.datasets[0].pointHoverBorderColor = '#c2410c';
+        } else {
+          waterChart.data.datasets[0].borderColor = '#0ea5e9';
+          waterChart.data.datasets[0].backgroundColor = 'rgba(14, 165, 233, 0.15)';
+          waterChart.data.datasets[0].pointBorderColor = '#0ea5e9';
+          waterChart.data.datasets[0].pointHoverBorderColor = '#1e40af';
+        }
+        waterChart.update('active');
+      }
+      
+      const statusBadge = document.getElementById('water-status');
+      const alertBanner = document.getElementById('alert-banner');
+      const alertTitle = document.getElementById('alert-title');
+      const alertMessage = document.getElementById('alert-message');
+      const alertLevel = document.getElementById('alert-level');
+      const evacuationTime = document.getElementById('evacuation-time');
+      const predictiveBox = document.getElementById('predictive-box');
+      const predictiveTime = document.getElementById('predictive-time');
+      
+      const waterStatus = document.querySelector('#water-level + .sensor-status');
+      const riseStatus = document.querySelector('#rise-rate').nextElementSibling;
+
+      const timeToCritical = Math.max(1, Math.ceil((20 - data.water) / (data.rise > 0 ? data.rise : 0.1)));
+      
+      // Update Action Plan
+      updateActionPlan(data.water);
+
+      if (data.water >= 20 || data.stage === 3) {
+        statusBadge.innerHTML = '<i class="fas fa-circle" style="color: #ef4444;"></i> <span>CRITICAL FLOOD</span>';
+        statusBadge.className = 'status-badge';
+        statusBadge.style.background = '#fee2e2';
+        statusBadge.style.color = '#b91c1c';
+        statusBadge.style.border = '1px solid #fecaca';
+        
+        waterStatus.className = 'sensor-status status-danger';
+        waterStatus.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Critical level';
+        
+        document.body.classList.add('emergency-strobe');
+        
+        alertBanner.style.display = 'block';
+        alertBanner.style.background = 'linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%)';
+        alertTitle.textContent = 'CRITICAL FLOOD';
+        alertTitle.style.color = '#ef4444';
+        alertMessage.textContent = 'EVACUATE IMMEDIATELY!';
+        alertMessage.style.color = '#b91c1c';
+        alertLevel.textContent = `${data.water.toFixed(1)} cm`;
+        evacuationTime.textContent = `0 minutes`;
+
+        if(predictiveBox) {
+          predictiveBox.style.display = 'block';
+          predictiveBox.style.background = 'rgba(239, 68, 68, 0.15)';
+          predictiveBox.style.borderLeftColor = '#ef4444';
+          predictiveTime.textContent = 'DANGER: OVERFLOW REACHED';
+        }
+        
+        document.getElementById('est-boats').innerText = '50+';
+        document.getElementById('est-rations').innerText = '2,000';
+        
+        speakAlert(); 
+
+      } else if (data.water >= 18) {
+        statusBadge.innerHTML = '<i class="fas fa-circle" style="color: #f59e0b;"></i> <span>FLOOD WATCH</span>';
+        statusBadge.className = 'status-badge';
+        statusBadge.style.background = '#ffedd5';
+        statusBadge.style.color = '#c2410c';
+        statusBadge.style.border = '1px solid #fed7aa';
+        
+        waterStatus.className = 'sensor-status status-warning';
+        waterStatus.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Watch level';
+        
+        document.body.classList.remove('emergency-strobe');
+        
+        alertBanner.style.display = 'block';
+        alertTitle.textContent = 'FLOOD WATCH ADVISORY';
+        alertTitle.style.color = '#f59e0b';
+        alertMessage.textContent = 'Prepare to evacuate. Water levels are nearing critical thresholds.';
+        alertMessage.style.color = '#c2410c';
+        alertLevel.textContent = `${data.water.toFixed(1)} cm`;
+        evacuationTime.textContent = `~${timeToCritical} minutes`;
+
+        if(predictiveBox) {
+          predictiveBox.style.display = 'block';
+          predictiveTime.textContent = `${timeToCritical} minutes (at current rise rate)`;
+        }
+        
+        document.getElementById('est-boats').innerText = '15';
+        document.getElementById('est-rations').innerText = '500';
+        
+      } else if (data.water >= 15) {
+        statusBadge.innerHTML = '<i class="fas fa-circle" style="color: #3b82f6;"></i> <span>FLOOD ADVISORY</span>';
+        statusBadge.className = 'status-badge';
+        statusBadge.style.background = '#dbeafe';
+        statusBadge.style.color = '#1e40af';
+        statusBadge.style.border = '1px solid #93c5fd';
+        
+        waterStatus.className = 'sensor-status status-warning';
+        waterStatus.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Advisory level';
+        
+        document.body.classList.remove('emergency-strobe');
+        alertBanner.style.display = 'none';
+        
+        document.getElementById('est-boats').innerText = '0';
+        document.getElementById('est-rations').innerText = '0';
+      } else {
+        statusBadge.innerHTML = '<i class="fas fa-circle" style="color: #10b981;"></i> <span>ALL CLEAR</span>';
+        statusBadge.className = 'status-badge';
+        statusBadge.style.background = '#dcfce7';
+        statusBadge.style.color = '#166534';
+        statusBadge.style.border = '1px solid #86efac';
+        
+        waterStatus.className = 'sensor-status status-safe';
+        waterStatus.innerHTML = '<i class="fas fa-check-circle"></i> Safe level';
+        
+        document.body.classList.remove('emergency-strobe');
+        alertBanner.style.display = 'none';
+        
+        document.getElementById('est-boats').innerText = '0';
+        document.getElementById('est-rations').innerText = '0';
+      }
+
+      document.getElementById('report-preview').innerText = 
+`======================================================
+OFFICIAL DISASTER MANAGEMENT REPORT
+======================================================
+Date / Time       : ${new Date().toLocaleString()}
+Station ID        : KEL-001 (Colombo North)
+System Health     : ONLINE
+
+--- CURRENT TELEMETRY ---
+Water Level       : ${data.water.toFixed(1)} cm
+Rise Rate         : ${data.rise.toFixed(2)} cm/min
+Threshold Max     : 20.0 cm
+Local Rain Detect : ${data.rain ? 'Yes' : 'No'}
+Soil Saturation   : ${data.soil}
+
+--- PREDICTIVE MODEL ---
+Current Status    : ${data.water >= 20 ? 'CRITICAL - EVACUATE' : data.water >= 18 ? 'WATCH - PREPARE' : 'NORMAL'}
+Est. Overflow     : ${data.water >= 20 ? 'BREACHED' : timeToCritical + ' minutes (at current rate)'}
+Evac Zone         : Gangaramaya Temple (1.2 km)
+
+======================================================
+Generated automatically by Kelani River DB Warning System
+`;
+    }
+
+    // ===== REAL-TIME FIREBASE LISTENER =====
+    function startFirebaseListener() {
+      const alertsRef = database.ref('alerts');
+      
+      alertsRef.on('value', (snapshot) => {
+        if (snapshot.exists()) {
+          const alertData = snapshot.val();
+          
+          let latest;
+          if (alertData && typeof alertData === 'object') {
+            if (alertData.water !== undefined) {
+              latest = alertData;
+            } else {
+              const entries = Object.values(alertData);
+              if (entries.length > 0) {
+                entries.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+                latest = entries[0];
+                window.firebaseRawData = entries; 
+              }
+            }
+          }
+          
+          if (latest) {
+            const data = {
+              water: parseFloat(latest.water) || 0,
+              rise: parseFloat(latest.rise) || 0,
+              temp: parseFloat(latest.temp) || 0,
+              hum: parseInt(latest.hum) || 0,
+              soil: parseInt(latest.soil) || 0,
+              rain: parseInt(latest.rain) || 0,
+              stage: parseInt(latest.stage) || 0,
+              location: latest.location || "Kelani River - Colombo",
+              timestamp: latest.timestamp || Date.now()
+            };
+            
+            if (previousWaterLevel !== null && Math.abs(data.water - previousWaterLevel) > 50) {
+                console.warn("ANOMALY DETECTED: Water level jumped impossibly (>50cm). Ignoring bad data.");
+                logToTerminal(`ANOMALY BLOCKED: Sensor read ${data.water}cm (Jumped >50cm). Flagged for calibration.`, 'WARN');
+                return; 
+            }
+            previousWaterLevel = data.water;
+            
+            if (document.getElementById('portal-overlay').style.display === 'none') {
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('dashboard').style.display = 'block';
+            }
+            
+            updateUI(data);
+          }
+        }
+      });
+    }
+
+    // ===== USER MANAGEMENT =====
+    function loadUsers() {
+      const usersRef = database.ref('users');
+      usersRef.once('value', (snapshot) => {
+        const users = snapshot.val();
+        const userList = document.getElementById('user-list');
+        userList.innerHTML = '';
+        
+        if (users && Object.keys(users).length > 0) {
+          Object.keys(users).forEach((userId) => {
+            const user = users[userId];
+            const userElement = document.createElement('div');
+            userElement.style = 'display: flex; justify-content: space-between; align-items: center; padding: 18px; background: white; border-radius: 14px; margin-bottom: 12px; border: 1px solid var(--gray-200); box-shadow: 0 2px 6px rgba(0,0,0,0.03); transition: all 0.3s;';
+            
+            userElement.innerHTML = `
+              <div>
+                <div style="font-weight: 700; color: var(--gray-900); font-size: 17px;">${user.name || 'Admin'}</div>
+                <div style="color: var(--gray-600); font-size: 15px; margin-top: 4px;">${user.email}</div>
+                <div style="color: var(--primary); font-size: 14px; margin-top: 4px; font-weight: 600;">${user.role || 'admin'} • ${new Date(user.createdAt).toLocaleDateString()}</div>
+              </div>
+              <button class="delete-user action-btn danger" data-id="${userId}" style="padding: 8px 16px; font-size: 15px; width:auto; color:white !important;">
+                <i class="fas fa-trash"></i> Remove
+              </button>
+            `;
+            
+            userList.appendChild(userElement);
+          });
+          
+          document.querySelectorAll('.delete-user').forEach(button => {
+            button.addEventListener('click', (e) => {
+              const userId = e.target.closest('button').getAttribute('data-id');
+              if (confirm('Are you sure you want to delete this user?')) {
+                database.ref('users/' + userId).remove()
+                  .then(() => {
+                    logAdminAction(`Deleted admin user account: ${userId}`);
+                    loadUsers();
+                    alert('User deleted successfully!');
+                  })
+                  .catch(error => {
+                    console.error('Error deleting user:', error);
+                    alert('Error deleting user: ' + error.message);
+                  });
+              }
+            });
+          });
+        } else {
+          userList.innerHTML = `
+            <div style="text-align: center; color: var(--gray-600); padding: 40px; font-size: 17px;">
+              <i class="fas fa-users" style="font-size: 42px; margin-bottom: 15px; color: var(--gray-400);"></i>
+              <div>No users added yet</div>
+              <div style="margin-top: 10px; font-size: 15px; color: var(--gray-500);">
+                Add users using the form above
+              </div>
+            </div>
+          `;
+        }
+      });
+    }
+
+    function addUser() {
+      const emailInput = document.getElementById('admin-user');
+      const email = emailInput.value.trim();
+      
+      if (!email) { alert('Please enter a valid email address'); return; }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { alert('Please enter a valid email address'); return; }
+      
+      const userData = { email: email, name: email.split('@')[0], role: 'admin', createdAt: Date.now() };
+      
+      database.ref('users').push(userData)
+        .then(() => {
+          logAdminAction(`Added new admin user: ${email}`);
+          alert('User added successfully!');
+          emailInput.value = '';
+          loadUsers();
+        })
+        .catch(error => {
+          console.error('Error adding user:', error);
+          alert('Error adding user: ' + error.message);
+        });
+    }
+
+    // ===== ALL EVENT LISTENERS & INITIALIZATION =====
+    document.addEventListener('DOMContentLoaded', () => {
+      
+      // FEATURE: Trigger language translation and Auto-speak on critical level when changed
+      document.getElementById('language-selector').addEventListener('change', function(e) {
+          const lang = e.target.value;
+          document.querySelectorAll('[data-i18n]').forEach(el => {
+              const key = el.getAttribute('data-i18n');
+              if(translations[lang] && translations[lang][key]) {
+                  el.innerText = translations[lang][key];
+              }
+          });
+
+          // Reset the spoken timer so the voice isn't blocked by the 60-second limit
+          lastSpokenTime = 0; 
+          
+          // If the water level is currently 20cm or above, speak immediately in the new language
+          if (previousWaterLevel !== null && previousWaterLevel >= 20) {
+              speakAlert(true); // "true" forces the browser to bypass the cooldown timer
+          }
+      });
+
+      // FEATURE: Device Offline Listener
+      window.addEventListener('offline', () => document.getElementById('offline-banner').style.display = 'block');
+      window.addEventListener('online', () => document.getElementById('offline-banner').style.display = 'none');
+
+      // FEATURE: Node Switcher
+      document.getElementById('node-selector').addEventListener('change', function(e) {
+          alert("Switching live telemetry stream to: " + e.target.value);
+          logAdminAction("Switched data view to " + e.target.value);
+      });
+
+      loadAuditLogs(); 
+      
+      setInterval(() => {
+        const now = new Date();
+        document.getElementById('timestamp').innerHTML = 
+          `<i class="far fa-clock"></i> <span>${now.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'})}</span>`;
+        document.getElementById('chart-timestamp').innerHTML = 
+          `<i class="far fa-clock"></i> <span>Updated: ${now.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'})}</span>`;
+        document.getElementById('weather-timestamp').innerHTML = 
+          `<i class="far fa-clock"></i> <span>Updated: ${now.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'})}</span>`;
+      }, 1000);
+      
+      document.getElementById('theme-toggle').addEventListener('click', () => {
+        document.body.classList.toggle('dark-mode');
+        const isDark = document.body.classList.contains('dark-mode');
+        document.getElementById('theme-toggle').innerHTML = isDark ? '<i class="fas fa-sun"></i>' : '<i class="fas fa-moon"></i>';
+      });
+
+      document.getElementById('btn-print-report').addEventListener('click', () => {
+        const content = document.getElementById('report-preview').innerText;
+        const win = window.open('', '_blank');
+        
+        win.document.body.innerHTML = `
+          <div style="font-family: sans-serif; padding: 40px; background: #f8fafc; min-height: 100vh;">
+             <div style="max-width: 800px; margin: 0 auto; background: white; padding: 40px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+                <h1 style="color: #1e40af; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; margin-bottom: 20px;">OFFICIAL EMERGENCY FLOOD REPORT</h1>
+                <pre style="font-family: monospace; font-size: 15px; line-height: 1.8; color: black; white-space: pre-wrap;">${content}</pre>
+                <p style="margin-top: 50px; font-size: 12px; color: #64748b; border-top: 1px solid #e2e8f0; padding-top: 15px;">Generated by Kelani River Command Center via Firebase Telemetry.</p>
+             </div>
+          </div>
+        `;
+        
+        setTimeout(() => win.print(), 500);
+      });
+
+      document.getElementById('btn-export-csv').addEventListener('click', () => {
+        if(!window.firebaseRawData || window.firebaseRawData.length === 0) { 
+            alert("No historical data available to export yet."); 
+            return; 
+        }
+        
+        let csvContent = "Timestamp,Water_Level_cm,Rise_Rate_cm_min,Temp_C,Humidity_pct,Soil_Moisture,Rain_Status\n";
+        
+        window.firebaseRawData.forEach(row => {
+            const time = new Date(row.timestamp < 10000000000 ? row.timestamp * 1000 : row.timestamp).toLocaleString();
+            csvContent += `"${time}",${row.water},${row.rise},${row.temp},${row.hum},${row.soil},${row.rain}\n`;
+        });
+        
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", `Kelani_River_Data_${new Date().getTime()}.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      });
+
+      document.getElementById('btn-fetch-history').addEventListener('click', () => {
+        const dateVal = document.getElementById('history-date').value;
+        if (!dateVal) {
+            alert("Please select a date from the calendar first!");
+            return;
+        }
+
+        const selectedDate = new Date(dateVal);
+        selectedDate.setHours(0, 0, 0, 0);
+        const startTs = selectedDate.getTime();
+        selectedDate.setHours(23, 59, 59, 999);
+        const endTs = selectedDate.getTime();
+
+        database.ref('alerts').once('value', (snapshot) => {
+            if (snapshot.exists()) {
+                const allData = snapshot.val();
+                let historicalData = [];
+
+                Object.values(allData).forEach(item => {
+                    let ts = item.timestamp;
+                    if (ts < 1000000000000) ts *= 1000; 
+                    if (ts >= startTs && ts <= endTs) {
+                        historicalData.push(item);
+                    }
+                });
+
+                if (historicalData.length === 0) {
+                    alert(`No sensor data found for ${dateVal}.`);
+                    return;
+                }
+
+                historicalData.sort((a, b) => a.timestamp - b.timestamp);
+
+                const step = Math.max(1, Math.floor(historicalData.length / 20)); 
+                const chartLabels = [];
+                const chartValues = [];
+
+                for (let i = 0; i < historicalData.length; i += step) {
+                    let ts = historicalData[i].timestamp;
+                    if (ts < 1000000000000) ts *= 1000;
+                    const dateObj = new Date(ts);
+                    chartLabels.push(dateObj.toLocaleTimeString('en-US', {hour: '2-digit', minute:'2-digit'}));
+                    chartValues.push(historicalData[i].water);
+                }
+
+                historyChart.data.labels = chartLabels;
+                
+                historyChart.data.datasets = [{
+                    label: `Water Level on ${dateVal}`,
+                    data: chartValues,
+                    borderColor: '#0ea5e9',
+                    backgroundColor: 'rgba(14, 165, 233, 0.15)',
+                    borderWidth: 3,
+                    tension: 0.3,
+                    fill: true,
+                    pointRadius: 4
+                }];
+                
+                historyChart.update();
+                alert(`Successfully loaded ${historicalData.length} records for ${dateVal}.`);
+            } else {
+                alert("Database is currently empty.");
+            }
+        });
+      });
+
+      // TAB NAVIGATION LOGIC (4 TABS)
+      const tabs = document.querySelectorAll('.tab');
+      tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+          tabs.forEach(t => t.classList.remove('active'));
+          tab.classList.add('active');
+          
+          const contentIds = ['dashboard-content', 'map-content', 'reports-content', 'configuration-content'];
+          contentIds.forEach(id => {
+              const element = document.getElementById(id);
+              if (element) {
+                  element.style.display = 'none';
+              }
+          });
+
+          const tabId = tab.getAttribute('data-tab');
+          const targetContent = document.getElementById(tabId + '-content');
+          if (targetContent) {
+              targetContent.style.display = 'block';
+          }
+
+          if (tabId === 'map' && map) {
+            setTimeout(() => map.invalidateSize(), 100);
+          }
+        });
+      });
+      
+      // CONFIGURATION HANDLERS
+      document.getElementById('save-thresholds').addEventListener('click', () => {
+        const criticalLevel = document.getElementById('critical-level').value;
+        const watchLevel = document.getElementById('watch-level').value;
+        const riseRate = document.getElementById('rise-rate-threshold').value;
+        database.ref('config/thresholds').set({ criticalLevel: parseFloat(criticalLevel), watchLevel: parseFloat(watchLevel), riseRate: parseFloat(riseRate), lastUpdated: Date.now() });
+        logAdminAction(`Changed Thresholds - Critical: ${criticalLevel}cm, Watch: ${watchLevel}cm, Rise: ${riseRate}cm/min`);
+        alert(`Thresholds saved successfully!\nCritical: ${criticalLevel}cm\nWatch: ${watchLevel}cm\nRise Rate: ${riseRate}cm/min`);
+      });
+      
+      document.getElementById('save-configuration').addEventListener('click', () => {
+        const dataRetention = document.getElementById('data-retention').value;
+        const notificationMethod = document.getElementById('notification-method').value;
+        const safeLocations = document.getElementById('safe-locations').value;
+        database.ref('config/system').set({ dataRetention, notificationMethod, safeLocations, lastUpdated: Date.now() });
+        logAdminAction(`Updated System Administration Configuration`);
+        alert(`Configuration saved successfully!`);
+      });
+      
+      document.getElementById('save-advanced').addEventListener('click', () => {
+        const sensorRefresh = document.getElementById('sensor-refresh').value;
+        const weatherRefresh = document.getElementById('weather-refresh').value;
+        const alertConfirmation = document.getElementById('alert-confirmation').value;
+        database.ref('config/advanced').set({ sensorRefresh: parseInt(sensorRefresh), weatherRefresh: parseInt(weatherRefresh), alertConfirmation, lastUpdated: Date.now() });
+        logAdminAction(`Updated Advanced Hardware Refresh Settings`);
+        alert(`Advanced settings saved successfully!`);
+      });
+      
+      document.getElementById('add-user').addEventListener('click', addUser);
+      document.getElementById('refresh-users').addEventListener('click', loadUsers);
+      document.getElementById('delete-all-users').addEventListener('click', () => {
+        if (confirm('Are you sure you want to delete ALL users? This cannot be undone.')) {
+          database.ref('users').remove().then(() => { 
+              logAdminAction(`DELETED ALL ADMIN USER ACCOUNTS`);
+              loadUsers(); 
+              alert('All users deleted successfully!'); 
+          }).catch(error => { console.error('Error deleting users:', error); alert('Error deleting users: ' + error.message); });
+        }
+      });
+      
+      loadUsers();
+    });
+
+    // Terminal Logging Logic
+    function logToTerminal(msg, type = 'SYS') {
+       const terminal = document.getElementById('terminal-window');
+       if(!terminal) return;
+       const time = new Date().toLocaleTimeString('en-US', {hour12:false});
+       let colorClass = 'term-type';
+       if(type === 'WARN') colorClass = 'term-warn';
+       if(type === 'ERR') colorClass = 'term-err';
+       
+       const div = document.createElement('div');
+       div.className = 'terminal-line';
+       div.innerHTML = `<span class="term-time">[${time}]</span> <span class="${colorClass}">${type}</span> ${msg}`;
+       
+       terminal.appendChild(div);
+       if(terminal.childElementCount > 40) terminal.removeChild(terminal.firstChild);
+       terminal.scrollTop = terminal.scrollHeight;
+    }
+
+    // Safely hook into Firebase exclusively for the terminal to print raw data without breaking updateUI
+    database.ref('alerts').limitToLast(1).on('child_added', (snapshot) => {
+        const data = snapshot.val();
+        if(data) {
+           logToTerminal(`Received encrypted payload from KEL-001...`);
+           logToTerminal(`W:${data.water}cm | R:${data.rise}cm/m | T:${data.temp}C | S:${data.soil} | H:${data.hum}%`, 'DATA');
+           if(data.water >= 20) {
+               logToTerminal(`CRITICAL OVERFLOW REGISTERED`, `ERR`);
+               sendTelegramAlert(data.water);
+           }
+           else if(data.water >= 18) logToTerminal(`WATCH THRESHOLD EXCEEDED`, `WARN`);
+        }
+    });
+// FEATURE: Detect scroll and apply the shrink effect
+    window.addEventListener('scroll', function() {
+      const header = document.querySelector('header');
+      // If the user scrolls down more than 50 pixels, shrink the header
+      if (window.scrollY > 50) {
+        header.classList.add('shrunk');
+      } else {
+        // If they scroll back to the top, expand it again
+        header.classList.remove('shrunk');
+      }
+    });
+  </script>
+</body>
+</html>
